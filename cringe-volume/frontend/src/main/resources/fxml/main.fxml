@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.Font?>
+
+<VBox alignment="CENTER" spacing="12"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.cringe.player.ui.MainController"
+      style="-fx-background-color: #1a1a2e;">
+    <padding>
+        <Insets top="20" right="30" bottom="20" left="30"/>
+    </padding>
+
+    <Label text="🎵 Cringe Volume Player"
+           style="-fx-text-fill: #e94560; -fx-font-weight: bold;">
+        <font><Font size="22"/></font>
+    </Label>
+
+    <Separator/>
+
+    <!-- Треки с сервера -->
+    <Label text="📂 Треки на сервере"
+           style="-fx-text-fill: #a0a0b0; -fx-font-weight: bold;">
+        <font><Font size="12"/></font>
+    </Label>
+
+    <HBox alignment="CENTER" spacing="8">
+        <ComboBox fx:id="trackCombo" promptText="Выберите трек..."
+                  prefWidth="280" onAction="#onSelectTrack"
+                  style="-fx-background-color: #16213e; -fx-mark-color: white;"/>
+        <Button fx:id="refreshTracksButton" text="🔄"
+                onAction="#onRefreshTracks"
+                style="-fx-background-color: #0f3460; -fx-text-fill: white; -fx-cursor: hand;"/>
+    </HBox>
+
+    <Separator/>
+
+    <!-- Загрузка файла -->
+    <HBox alignment="CENTER" spacing="10">
+        <Button fx:id="chooseFileButton" text="📂 Загрузить файл"
+                onAction="#onChooseFile"
+                style="-fx-background-color: #0f3460; -fx-text-fill: white; -fx-cursor: hand;"/>
+        <Label fx:id="fileLabel" text="Файл не выбран"
+               style="-fx-text-fill: #a0a0b0;"/>
+    </HBox>
+
+    <!-- Управление воспроизведением -->
+    <HBox alignment="CENTER" spacing="15">
+        <Button fx:id="playButton" text="▶ Play" onAction="#onPlay"
+                prefWidth="100"
+                style="-fx-background-color: #16c79a; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
+        <Button fx:id="stopButton" text="⏹ Stop" onAction="#onStop"
+                prefWidth="100"
+                style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
+    </HBox>
+
+    <Separator/>
+
+    <!-- Громкость -->
+    <Label text="💰 Регулировка громкости (платная)"
+           style="-fx-text-fill: #e94560; -fx-font-weight: bold;">
+        <font><Font size="14"/></font>
+    </Label>
+
+    <HBox alignment="CENTER" spacing="10">
+        <Label text="Громкость (0-100):" style="-fx-text-fill: #a0a0b0;"/>
+        <TextField fx:id="volumeField" prefWidth="70" promptText="50"
+                   style="-fx-background-color: #16213e; -fx-text-fill: white; -fx-border-color: #0f3460;"/>
+        <Button fx:id="applyVolumeButton" text="💳 Применить громкость"
+                onAction="#onApplyVolume"
+                style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
+    </HBox>
+
+    <Label fx:id="volumeLabel" text="Громкость: 50%"
+           style="-fx-text-fill: #16c79a; -fx-font-weight: bold;">
+        <font><Font size="14"/></font>
+    </Label>
+
+    <Separator/>
+
+    <Label fx:id="statusLabel" text="Загрузите или выберите трек"
+           style="-fx-text-fill: #a0a0b0;">
+        <font><Font size="11"/></font>
+    </Label>
+</VBox>

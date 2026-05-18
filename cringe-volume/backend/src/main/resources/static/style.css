@@ -1,0 +1,161 @@
+/* ====== Cringe Volume Player — Web Client ====== */
+*{margin:0;padding:0;box-sizing:border-box}
+
+:root{
+    --bg:#0f0f1a;
+    --surface:#1a1a2e;
+    --surface2:#16213e;
+    --accent:#e94560;
+    --accent2:#5B2FF3;
+    --green:#16c79a;
+    --text:#e0e0e0;
+    --muted:#888;
+    --radius:12px;
+}
+
+body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+}
+
+/* ---- header ---- */
+.header{
+    width:100%;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    padding:18px 24px;
+    text-align:center;
+}
+.header h1{
+    font-size:24px;font-weight:800;color:#fff;letter-spacing:-.5px;
+}
+.header p{
+    font-size:12px;color:rgba(255,255,255,.65);margin-top:2px;
+}
+
+/* ---- main container ---- */
+.container{
+    max-width:520px;width:100%;padding:20px 16px 40px;
+}
+
+/* ---- card ---- */
+.card{
+    background:var(--surface);
+    border-radius:var(--radius);
+    padding:20px;
+    margin-bottom:16px;
+    box-shadow:0 2px 12px rgba(0,0,0,.35);
+}
+.card h2{
+    font-size:15px;font-weight:700;margin-bottom:14px;color:var(--accent);
+}
+
+/* ---- track list ---- */
+.track-list{
+    max-height:220px;overflow-y:auto;
+    border:1px solid #2a2a44;border-radius:8px;
+}
+.track-item{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;cursor:pointer;transition:background .15s;
+    border-bottom:1px solid #2a2a44;
+}
+.track-item:last-child{border-bottom:none}
+.track-item:hover{background:var(--surface2)}
+.track-item.active{background:var(--accent2);color:#fff}
+.track-item .name{font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.track-item .size{font-size:11px;color:var(--muted);margin-left:8px;white-space:nowrap}
+
+.empty-msg{
+    text-align:center;padding:24px;color:var(--muted);font-size:13px;
+}
+
+/* ---- upload ---- */
+.upload-area{
+    margin-top:12px;display:flex;gap:8px;align-items:center;
+}
+.upload-area label{
+    flex:1;padding:10px;text-align:center;
+    background:var(--surface2);border:1.5px dashed #3a3a5e;
+    border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);
+    transition:border-color .2s;
+}
+.upload-area label:hover{border-color:var(--accent)}
+.upload-area input[type=file]{display:none}
+
+/* ---- player ---- */
+.player-section{display:flex;flex-direction:column;gap:12px}
+
+.now-playing{
+    text-align:center;font-size:13px;color:var(--green);
+    min-height:18px;word-break:break-all;
+}
+
+audio{width:100%;border-radius:8px;outline:none}
+audio::-webkit-media-controls-panel{background:var(--surface2)}
+
+/* ---- volume ---- */
+.volume-row{
+    display:flex;align-items:center;gap:10px;
+}
+.volume-row input[type=number]{
+    width:70px;padding:8px 10px;background:var(--surface2);border:1.5px solid #3a3a5e;
+    border-radius:8px;color:#fff;font-size:15px;text-align:center;outline:none;
+}
+.volume-row input:focus{border-color:var(--accent)}
+.volume-label{font-size:13px;color:var(--muted)}
+
+/* ---- buttons ---- */
+.btn{
+    padding:12px 20px;border:none;border-radius:8px;font-size:14px;
+    font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s;
+}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-accent{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;width:100%}
+.btn-accent:hover:not(:disabled){opacity:.88}
+.btn-sm{padding:8px 14px;font-size:12px}
+.btn-outline{background:transparent;border:1.5px solid var(--accent);color:var(--accent)}
+.btn-outline:hover:not(:disabled){background:var(--accent);color:#fff}
+
+/* ---- status ---- */
+.status-bar{
+    text-align:center;font-size:12px;color:var(--muted);
+    padding:8px;background:var(--surface);border-radius:8px;
+}
+
+/* ---- modal ---- */
+.modal-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+    z-index:100;align-items:center;justify-content:center;
+}
+.modal-backdrop.open{display:flex}
+.modal{
+    background:var(--surface);border-radius:var(--radius);
+    padding:28px 24px;max-width:400px;width:90%;text-align:center;
+    box-shadow:0 8px 32px rgba(0,0,0,.5);
+}
+.modal h3{font-size:18px;color:var(--accent);margin-bottom:6px}
+.modal .modal-desc{font-size:13px;color:var(--muted);margin-bottom:16px}
+.modal .modal-price{font-size:28px;font-weight:800;color:var(--accent);margin-bottom:4px}
+.modal .price-detail{font-size:12px;color:var(--muted);margin-bottom:16px}
+.modal .modal-actions{display:flex;gap:10px;justify-content:center;margin-top:16px}
+.modal .spinner{
+    width:36px;height:36px;border:3px solid #333;border-top-color:var(--accent);
+    border-radius:50%;animation:spin .7s linear infinite;margin:12px auto;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* scrollbar */
+.track-list::-webkit-scrollbar{width:6px}
+.track-list::-webkit-scrollbar-track{background:var(--surface2);border-radius:3px}
+.track-list::-webkit-scrollbar-thumb{background:#444;border-radius:3px}
+
+/* footer */
+.footer{
+    text-align:center;font-size:11px;color:#555;padding:16px;
+}

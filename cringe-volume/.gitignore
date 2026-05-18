@@ -1,0 +1,29 @@
+# === Environment ===
+.env
+
+# === Java / Maven ===
+target/
+*.class
+*.jar
+*.war
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Docker ===
+docker-compose.override.yml
+
+# === Music (runtime data) ===
+backend/music/*.mp3
+backend/music/*.wav

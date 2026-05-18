@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    env_file:
+      - .env
+    volumes:
+      - music:/app/music
+
+volumes:
+  music:

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Cringe Volume Player</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>"/>
+    <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<div class="header">
+    <h1>🎵 Cringe Volume Player</h1>
+    <p>Каждое изменение громкости стоит денег</p>
+</div>
+
+<div class="container">
+
+    <!-- Треки -->
+    <div class="card">
+        <h2>📂 Библиотека треков</h2>
+        <div class="track-list" id="trackList">
+            <div class="empty-msg">Загрузка...</div>
+        </div>
+        <div class="upload-area">
+            <label for="uploadFile">📤 Загрузить трек (.mp3 / .wav)</label>
+            <input type="file" id="uploadFile" accept=".mp3,.wav,audio/mpeg,audio/wav"/>
+        </div>
+    </div>
+
+    <!-- Плеер -->
+    <div class="card">
+        <h2>🎧 Плеер</h2>
+        <div class="player-section">
+            <div class="now-playing" id="nowPlaying">Выберите трек из списка</div>
+            <audio id="audioPlayer" controls preload="metadata"></audio>
+        </div>
+    </div>
+
+    <!-- Громкость -->
+    <div class="card">
+        <h2>💰 Громкость (платная)</h2>
+        <div class="volume-row">
+            <span class="volume-label">Новая громкость:</span>
+            <input type="number" id="volumeInput" min="0" max="100" value="50" step="1"/>
+            <span class="volume-label">%</span>
+            <button class="btn btn-accent btn-sm" onclick="applyVolume()" style="margin-left:auto">
+                💳 Изменить
+            </button>
+        </div>
+    </div>
+
+    <!-- Статус -->
+    <div class="status-bar" id="statusBar">Загрузка...</div>
+</div>
+
+<!-- Payment modal -->
+<div class="modal-backdrop" id="paymentModal">
+    <div class="modal">
+        <h3 id="modalTitle">Оплата</h3>
+        <p class="modal-desc" id="modalDesc"></p>
+        <div class="modal-price" id="modalPrice"></div>
+        <div class="price-detail" id="modalPriceDetail"></div>
+        <div id="modalBody"></div>
+        <div class="modal-actions" id="modalActions"></div>
+    </div>
+</div>
+
+<div class="footer">
+    Cringe Volume Player &copy; 2024 &mdash; демонстрационный проект
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

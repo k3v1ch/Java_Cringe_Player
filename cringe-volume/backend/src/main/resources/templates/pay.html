@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>CringePay — Оплата</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤡</text></svg>"/>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;min-height:100vh;display:flex;flex-direction:column;align-items:center;color:#1a1a2e}
+        .header{width:100%;background:linear-gradient(135deg,#5B2FF3,#8B5CF6);padding:16px 24px;display:flex;align-items:center;gap:10px}
+        .header .logo{color:#fff;font-size:22px;font-weight:700;letter-spacing:-.5px}
+        .header .secure{margin-left:auto;color:rgba(255,255,255,.7);font-size:13px}
+        .card{background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:440px;width:100%;margin:24px auto;overflow:hidden}
+        .amount-section{background:linear-gradient(135deg,#5B2FF3 0%,#7c4dff 100%);padding:28px 24px;text-align:center;color:#fff}
+        .amount-section .sum{font-size:36px;font-weight:800}
+        .amount-section .desc{margin-top:6px;font-size:14px;opacity:.85}
+        .timer-badge{display:inline-block;margin-top:12px;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 16px;font-size:13px;font-weight:600}
+        .timer-badge.warn{background:rgba(239,68,68,.8)}
+        .body-section{padding:24px}
+        .qr-section{text-align:center;margin-bottom:20px;padding:16px;border:1px solid #e5e7eb;border-radius:12px;background:#fafafa}
+        .qr-section canvas{display:block;margin:0 auto 8px}
+        .qr-section .sbp{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:#6b7280}
+        .qr-section .sbp-badge{background:#00a884;color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px}
+        .divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:#9ca3af;font-size:13px}
+        .divider::before,.divider::after{content:'';flex:1;height:1px;background:#e5e7eb}
+        .field{margin-bottom:14px}
+        .field label{display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+        .field input{width:100%;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;outline:none;transition:border-color .2s}
+        .field input:focus{border-color:#5B2FF3}
+        .row{display:flex;gap:12px}
+        .row .field{flex:1}
+        .promo-section{margin:16px 0;padding:12px;background:#f9fafb;border-radius:10px;border:1px dashed #d1d5db}
+        .promo-row{display:flex;gap:8px}
+        .promo-row input{flex:1;padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none}
+        .promo-row button{padding:10px 16px;background:#e5e7eb;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;transition:background .2s}
+        .promo-row button:hover{background:#d1d5db}
+        .promo-error{color:#ef4444;font-size:12px;margin-top:6px;display:none;animation:shake .4s}
+        @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+        .price-breakdown{margin:16px 0;padding:12px 16px;background:#f9fafb;border-radius:10px;font-size:14px}
+        .price-breakdown .line{display:flex;justify-content:space-between;padding:4px 0}
+        .price-breakdown .line.total{border-top:1px solid #e5e7eb;margin-top:6px;padding-top:8px;font-weight:700;font-size:15px}
+        .pay-btn{width:100%;padding:16px;background:linear-gradient(135deg,#5B2FF3,#7c4dff);color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s}
+        .pay-btn:hover{opacity:.92}
+        .pay-btn:active{transform:scale(.98)}
+        .pay-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+        .overlay{display:none;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center}
+        .overlay.active{display:flex}
+        .spinner{width:48px;height:48px;border:4px solid #e5e7eb;border-top-color:#5B2FF3;border-radius:50%;animation:spin .8s linear infinite;margin-bottom:16px}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .success-icon{font-size:56px;margin-bottom:12px}
+        .overlay p{font-size:18px;font-weight:600;color:#1a1a2e}
+        .overlay .sub{font-size:13px;color:#6b7280;margin-top:6px;font-weight:400}
+        .footer{text-align:center;padding:12px;font-size:11px;color:#9ca3af}
+        .expired-banner{background:#fef2f2;color:#dc2626;text-align:center;padding:12px;font-weight:600;font-size:14px;display:none}
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="logo">🤡 CringePay</div>
+    <div class="secure">🔒 Безопасная оплата</div>
+</div>
+
+<div class="card">
+    <div class="amount-section">
+        <div class="sum" th:text="${totalAmount + ' ₽'}">84 ₽</div>
+        <div class="desc" th:text="${description}">Изменение громкости</div>
+        <div class="timer-badge" id="timerBadge">⏱ <span id="timer">05:00</span></div>
+    </div>
+
+    <div class="expired-banner" id="expiredBanner">⏰ Время оплаты истекло</div>
+
+    <!-- основной контент -->
+    <div class="body-section" id="mainContent">
+
+        <!-- СБП -->
+        <div class="qr-section">
+            <canvas id="qr" width="150" height="150"></canvas>
+            <div class="sbp">
+                <span class="sbp-badge">СБП</span>
+                Отсканируйте для оплаты через СБП
+            </div>
+        </div>
+
+        <div class="divider">или оплатите картой</div>
+
+        <!-- Поля карты -->
+        <div class="field">
+            <label>Номер карты</label>
+            <input type="text" id="cardNumber" placeholder="0000 0000 0000 0000" maxlength="19" autocomplete="off"/>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label>Срок</label>
+                <input type="text" placeholder="MM/YY" maxlength="5" autocomplete="off"/>
+            </div>
+            <div class="field">
+                <label>CVV</label>
+                <input type="password" placeholder="•••" maxlength="4" autocomplete="off"/>
+            </div>
+        </div>
+        <div class="field">
+            <label>Имя владельца</label>
+            <input type="text" placeholder="IVAN IVANOV" autocomplete="off"/>
+        </div>
+
+        <!-- Email для чека -->
+        <div class="field">
+            <label>Email для чека (необязательно)</label>
+            <input type="email" id="emailInput" placeholder="example@mail.com" autocomplete="email"/>
+        </div>
+
+        <!-- Промокод -->
+        <div class="promo-section">
+            <div class="promo-row">
+                <input type="text" id="promoInput" placeholder="Промокод"/>
+                <button onclick="applyPromo()">Применить</button>
+            </div>
+            <div class="promo-error" id="promoError">❌ Промокод недействителен</div>
+        </div>
+
+        <!-- Итого -->
+        <div class="price-breakdown">
+            <div class="line">
+                <span>Базовая стоимость</span>
+                <span th:text="${basePrice + ' ₽'}">69 ₽</span>
+            </div>
+            <div class="line">
+                <span>Комиссия сервиса</span>
+                <span th:text="${commission + ' ₽'}">15 ₽</span>
+            </div>
+            <div class="line total">
+                <span>Итого</span>
+                <span th:text="${totalAmount + ' ₽'}">84 ₽</span>
+            </div>
+        </div>
+
+        <button class="pay-btn" id="payBtn" onclick="pay()">
+            Оплатить <span th:text="${totalAmount + ' ₽'}">84 ₽</span>
+        </button>
+    </div>
+
+    <!-- Обработка -->
+    <div class="overlay" id="processingOverlay">
+        <div class="spinner"></div>
+        <p>Обработка платежа...</p>
+        <p class="sub">Не закрывайте страницу</p>
+    </div>
+
+    <!-- Успех -->
+    <div class="overlay" id="successOverlay">
+        <div class="success-icon">✅</div>
+        <p>Платёж успешно проведён!</p>
+        <p class="sub">Можете закрыть эту страницу</p>
+    </div>
+
+    <!-- Истёк -->
+    <div class="overlay" id="expiredOverlay">
+        <div class="success-icon">⏰</div>
+        <p>Время оплаты истекло</p>
+        <p class="sub">Создайте новый платёж в приложении</p>
+    </div>
+</div>
+
+<div class="footer">
+    CringePay — демонстрационный платёжный шлюз. Реальные платежи не проводятся.
+</div>
+
+<script th:inline="javascript">
+    const TOKEN      = /*[[${token}]]*/ 'demo';
+    const EXPIRES_AT = /*[[${expiresAtMs}]]*/ 0;
+    const STATUS     = /*[[${status}]]*/ 'pending';
+
+    /* ---------- таймер ---------- */
+    function startTimer() {
+        const timerEl = document.getElementById('timer');
+        const badge   = document.getElementById('timerBadge');
+        const tick = () => {
+            const remaining = EXPIRES_AT - Date.now();
+            if (remaining <= 0) {
+                timerEl.textContent = '00:00';
+                onExpired();
+                return;
+            }
+            const m = Math.floor(remaining / 60000);
+            const s = Math.floor((remaining % 60000) / 1000);
+            timerEl.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+            if (remaining < 60000) badge.classList.add('warn');
+            requestAnimationFrame(() => setTimeout(tick, 250));
+        };
+        tick();
+    }
+
+    function onExpired() {
+        document.getElementById('mainContent').style.display = 'none';
+        document.getElementById('expiredBanner').style.display = 'block';
+        document.getElementById('expiredOverlay').classList.add('active');
+    }
+
+    /* ---------- fake QR ---------- */
+    function drawFakeQR() {
+        const c = document.getElementById('qr');
+        const ctx = c.getContext('2d');
+        const s = c.width, n = 25, cs = s / n;
+
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, s, s);
+
+        function finderPattern(ox, oy) {
+            ctx.fillStyle = '#000';
+            for (let i = 0; i < 7; i++)
+                for (let j = 0; j < 7; j++)
+                    if (i===0||i===6||j===0||j===6||(i>=2&&i<=4&&j>=2&&j<=4))
+                        ctx.fillRect((ox+i)*cs,(oy+j)*cs,cs,cs);
+        }
+        finderPattern(0,0);
+        finderPattern(n-7,0);
+        finderPattern(0,n-7);
+
+        ctx.fillStyle = '#000';
+        for (let i = 8; i < n-8; i += 2) {
+            ctx.fillRect(i*cs, 6*cs, cs, cs);
+            ctx.fillRect(6*cs, i*cs, cs, cs);
+        }
+
+        let hash = 0;
+        for (let i = 0; i < TOKEN.length; i++)
+            hash = ((hash << 5) - hash) + TOKEN.charCodeAt(i) | 0;
+        let seed = Math.abs(hash) || 1;
+        function rng() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+        for (let i = 0; i < n; i++)
+            for (let j = 0; j < n; j++) {
+                if ((i<8&&j<8)||(i>=n-8&&j<8)||(i<8&&j>=n-8)) continue;
+                if (i===6||j===6) continue;
+                if (rng() > 0.52) {
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(i*cs, j*cs, cs-.4, cs-.4);
+                }
+            }
+    }
+
+    /* ---------- форматирование номера карты ---------- */
+    document.getElementById('cardNumber').addEventListener('input', function(e) {
+        let v = e.target.value.replace(/\D/g,'').substring(0,16);
+        e.target.value = v.replace(/(.{4})/g, '$1 ').trim();
+    });
+
+    /* ---------- промокод ---------- */
+    function applyPromo() {
+        const err = document.getElementById('promoError');
+        err.style.display = 'none';
+        void err.offsetWidth;                       // reflow для повторной анимации
+        err.style.display = 'block';
+    }
+
+    /* ---------- оплата ---------- */
+    async function pay() {
+        const btn = document.getElementById('payBtn');
+        btn.disabled = true;
+
+        document.getElementById('mainContent').style.display = 'none';
+        document.getElementById('processingOverlay').classList.add('active');
+
+        const start = Date.now();
+        try {
+            const email = document.getElementById('emailInput').value.trim();
+            const resp = await fetch('/api/payments/' + TOKEN + '/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email || null })
+            });
+            if (!resp.ok) throw new Error('fail');
+
+            const elapsed = Date.now() - start;
+            await new Promise(r => setTimeout(r, Math.max(0, 2500 - elapsed)));
+
+            document.getElementById('processingOverlay').classList.remove('active');
+            document.getElementById('successOverlay').classList.add('active');
+        } catch(e) {
+            document.getElementById('processingOverlay').classList.remove('active');
+            document.getElementById('mainContent').style.display = 'block';
+            btn.disabled = false;
+            alert('Ошибка обработки платежа');
+        }
+    }
+
+    /* ---------- init ---------- */
+    if (STATUS === 'expired') {
+        onExpired();
+    } else if (STATUS === 'paid') {
+        document.getElementById('mainContent').style.display = 'none';
+        document.getElementById('successOverlay').classList.add('active');
+    } else {
+        startTimer();
+    }
+    drawFakeQR();
+</script>
+</body>
+</html>

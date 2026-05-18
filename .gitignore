@@ -1,0 +1,47 @@
+# ============================================================
+#  Cringe Volume Player — .gitignore
+# ============================================================
+
+# --- Секреты / окружение ---
+.env
+*.env
+!.env.example
+
+# --- Java / Maven ---
+target/
+*.class
+*.war
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+.mvn/timing.properties
+
+# --- jpackage / сборка .exe ---
+build/
+dist/
+*.exe
+*.msi
+app-image/
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# --- Логи / временные файлы ---
+*.log
+logs/
+hs_err_pid*
+
+# --- Загруженные аудиофайлы (runtime) ---
+uploads/
+backend/uploads/
+
+# --- ОС ---
+.DS_Store
+Thumbs.db
