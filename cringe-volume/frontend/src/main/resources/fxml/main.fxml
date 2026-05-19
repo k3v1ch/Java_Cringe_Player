@@ -13,15 +13,15 @@
         <Insets top="20" right="30" bottom="20" left="30"/>
     </padding>
 
-    <Label text="🎵 Cringe Volume Player"
+    <Label text="&#127925; Cringe Volume Player"
            style="-fx-text-fill: #e94560; -fx-font-weight: bold;">
         <font><Font size="22"/></font>
     </Label>
 
     <Separator/>
 
-    <!-- Треки с сервера -->
-    <Label text="📂 Треки на сервере"
+    <!-- Server tracks -->
+    <Label text="&#128194; Треки на сервере"
            style="-fx-text-fill: #a0a0b0; -fx-font-weight: bold;">
         <font><Font size="12"/></font>
     </Label>
@@ -30,36 +30,46 @@
         <ComboBox fx:id="trackCombo" promptText="Выберите трек..."
                   prefWidth="280" onAction="#onSelectTrack"
                   style="-fx-background-color: #16213e; -fx-mark-color: white;"/>
-        <Button fx:id="refreshTracksButton" text="🔄"
+        <Button fx:id="refreshTracksButton" text="&#128260;"
                 onAction="#onRefreshTracks"
                 style="-fx-background-color: #0f3460; -fx-text-fill: white; -fx-cursor: hand;"/>
     </HBox>
 
     <Separator/>
 
-    <!-- Загрузка файла -->
+    <!-- Upload file -->
     <HBox alignment="CENTER" spacing="10">
-        <Button fx:id="chooseFileButton" text="📂 Загрузить файл"
+        <Button fx:id="chooseFileButton" text="&#128194; Загрузить файл"
                 onAction="#onChooseFile"
                 style="-fx-background-color: #0f3460; -fx-text-fill: white; -fx-cursor: hand;"/>
         <Label fx:id="fileLabel" text="Файл не выбран"
                style="-fx-text-fill: #a0a0b0;"/>
     </HBox>
 
-    <!-- Управление воспроизведением -->
+    <!-- Playback controls -->
     <HBox alignment="CENTER" spacing="15">
-        <Button fx:id="playButton" text="▶ Play" onAction="#onPlay"
+        <Button fx:id="playButton" text="&#9654; Play" onAction="#onPlay"
                 prefWidth="100"
                 style="-fx-background-color: #16c79a; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
-        <Button fx:id="stopButton" text="⏹ Stop" onAction="#onStop"
+        <Button fx:id="stopButton" text="&#9209; Stop" onAction="#onStop"
                 prefWidth="100"
                 style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
     </HBox>
 
+    <!-- Seek bar -->
+    <HBox alignment="CENTER" spacing="8">
+        <Label fx:id="currentTimeLabel" text="0:00" prefWidth="45" alignment="CENTER_RIGHT"
+               style="-fx-text-fill: #a0a0b0; -fx-font-size: 11px;"/>
+        <Slider fx:id="seekSlider" prefWidth="300" min="0" max="100" value="0"
+                disable="true"/>
+        <Label fx:id="durationLabel" text="0:00" prefWidth="45"
+               style="-fx-text-fill: #a0a0b0; -fx-font-size: 11px;"/>
+    </HBox>
+
     <Separator/>
 
-    <!-- Громкость -->
-    <Label text="💰 Регулировка громкости (платная)"
+    <!-- Volume (paid) -->
+    <Label text="&#128176; Регулировка громкости (платная)"
            style="-fx-text-fill: #e94560; -fx-font-weight: bold;">
         <font><Font size="14"/></font>
     </Label>
@@ -68,7 +78,7 @@
         <Label text="Громкость (0-100):" style="-fx-text-fill: #a0a0b0;"/>
         <TextField fx:id="volumeField" prefWidth="70" promptText="50"
                    style="-fx-background-color: #16213e; -fx-text-fill: white; -fx-border-color: #0f3460;"/>
-        <Button fx:id="applyVolumeButton" text="💳 Применить громкость"
+        <Button fx:id="applyVolumeButton" text="&#128179; Применить громкость"
                 onAction="#onApplyVolume"
                 style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
     </HBox>

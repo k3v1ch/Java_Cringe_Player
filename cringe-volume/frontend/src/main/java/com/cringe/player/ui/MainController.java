@@ -3,6 +3,7 @@ package com.cringe.player.ui;
 import com.cringe.player.api.AudioApiClient;
 import com.cringe.player.payment.PaymentDialogController;
 import com.cringe.player.player.AudioPlayerEngine;
+import com.cringe.player.update.AppUpdater;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -10,9 +11,11 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.media.MediaPlayer;
 import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 import java.io.File;
 import java.util.List;
@@ -30,9 +33,15 @@ public class MainController {
     @FXML private ComboBox<String> trackCombo;
     @FXML private Button refreshTracksButton;
 
+    /* seek bar */
+    @FXML private Slider seekSlider;
+    @FXML private Label currentTimeLabel;
+    @FXML private Label durationLabel;
+
     private final AudioPlayerEngine playerEngine = new AudioPlayerEngine();
     private final AudioApiClient apiClient = new AudioApiClient();
     private File currentFile;
+    private boolean seeking = false;
 
     @FXML
     public void initialize() {
@@ -40,14 +49,24 @@ public class MainController {
         stopButton.setDisable(true);
         applyVolumeButton.setDisable(true);
         volumeField.setDisable(true);
+        seekSlider.setDisable(true);
         volumeLabel.setText("Громкость: 50%");
         statusLabel.setText("Загрузите или выберите трек");
 
-        // загрузить список треков с сервера
+        // Seek slider: when user presses mouse — stop auto-updating
+        seekSlider.setOnMousePressed(e -> seeking = true);
+        seekSlider.setOnMouseReleased(e -> {
+            seeking = false;
+            playerEngine.seek(seekSlider.getValue());
+        });
+
         refreshTracks();
+
+        // Auto-update check (background, non-blocking)
+        AppUpdater.checkOnStartup();
     }
 
-    /* ========== Треки с сервера ========== */
+    /* ========== Tracks from server ========== */
 
     @FXML
     private void onRefreshTracks() {
@@ -91,7 +110,9 @@ public class MainController {
             playButton.setDisable(false);
             applyVolumeButton.setDisable(false);
             volumeField.setDisable(false);
+            seekSlider.setDisable(false);
             statusLabel.setText("Трек готов: " + selected);
+            wireSeekSlider();
         } catch (Exception e) {
             e.printStackTrace();
             String msg = describeError(e);
@@ -100,7 +121,7 @@ public class MainController {
         }
     }
 
-    /* ========== Загрузка с диска ========== */
+    /* ========== Upload from disk ========== */
 
     @FXML
     private void onChooseFile() {
@@ -128,12 +149,13 @@ public class MainController {
                     playButton.setDisable(false);
                     applyVolumeButton.setDisable(false);
                     volumeField.setDisable(false);
+                    seekSlider.setDisable(false);
                     chooseFileButton.setDisable(false);
                     statusLabel.setText("Файл загружен. Готов к воспроизведению");
-                    refreshTracks(); // обновить список
+                    wireSeekSlider();
+                    refreshTracks();
                 });
             } catch (Exception e) {
-                // печатаем полный stacktrace в stderr — иначе ошибка теряется
                 e.printStackTrace();
                 String msg = describeError(e);
                 Platform.runLater(() -> {
@@ -148,9 +170,7 @@ public class MainController {
     }
 
     /**
-     * Превращает любое исключение в читаемое сообщение.
-     * Для {@link com.cringe.player.api.ApiException} использует формат
-     * "Ошибка CODE_001: текст". Для остальных — recurse по cause-цепочке.
+     * Turns any exception into a readable message.
      */
     private String describeError(Throwable e) {
         if (e instanceof com.cringe.player.api.ApiException ae) {
@@ -162,7 +182,7 @@ public class MainController {
         while (cur != null && depth < 5) {
             String m = cur.getMessage();
             if (m == null || m.isBlank()) m = cur.getClass().getSimpleName();
-            if (sb.length() > 0) sb.append(" → ");
+            if (!sb.isEmpty()) sb.append(" → ");
             sb.append(m);
             Throwable next = cur.getCause();
             if (next == cur) break;
@@ -172,17 +192,21 @@ public class MainController {
         return sb.toString();
     }
 
-    /* ========== Воспроизведение ========== */
+    /* ========== Playback ========== */
 
     @FXML
     private void onPlay() {
-        // воспроизведение — локальное на клиенте, серверный state-эндпоинт
-        // дёргать не обязательно (он используется только для синхронизации статуса).
         try {
-            playerEngine.play();
-            playButton.setDisable(true);
-            stopButton.setDisable(false);
-            statusLabel.setText("Воспроизведение...");
+            if (playerEngine.isPlaying()) {
+                playerEngine.pause();
+                playButton.setText("▶ Play");
+                statusLabel.setText("Пауза");
+            } else {
+                playerEngine.play();
+                playButton.setText("⏸ Pause");
+                stopButton.setDisable(false);
+                statusLabel.setText("Воспроизведение...");
+            }
         } catch (Exception e) {
             e.printStackTrace();
             showError("Ошибка", describeError(e));
@@ -193,8 +217,10 @@ public class MainController {
     private void onStop() {
         try {
             playerEngine.stop();
-            playButton.setDisable(false);
+            playButton.setText("▶ Play");
             stopButton.setDisable(true);
+            seekSlider.setValue(0);
+            currentTimeLabel.setText("0:00");
             statusLabel.setText("Остановлено");
         } catch (Exception e) {
             e.printStackTrace();
@@ -202,7 +228,56 @@ public class MainController {
         }
     }
 
-    /* ========== Громкость (через платёж) ========== */
+    /* ========== Seek slider wiring ========== */
+
+    /**
+     * Called after loading a new track to wire MediaPlayer listeners
+     * to the seek slider and time labels.
+     */
+    private void wireSeekSlider() {
+        MediaPlayer mp = playerEngine.getMediaPlayer();
+        if (mp == null) return;
+
+        // Reset slider
+        seekSlider.setValue(0);
+        currentTimeLabel.setText("0:00");
+        durationLabel.setText("0:00");
+
+        // When media is ready — set slider max and duration label
+        mp.setOnReady(() -> {
+            double totalSec = mp.getTotalDuration().toSeconds();
+            seekSlider.setMax(totalSec);
+            durationLabel.setText(formatTime(mp.getTotalDuration()));
+        });
+
+        // Update slider and time label as track plays
+        mp.currentTimeProperty().addListener((obs, oldVal, newVal) -> {
+            if (!seeking) {
+                seekSlider.setValue(newVal.toSeconds());
+            }
+            currentTimeLabel.setText(formatTime(newVal));
+        });
+
+        // When track ends (cycle restarts)
+        mp.setOnEndOfMedia(() -> {
+            // INDEFINITE cycle — will auto-restart, slider resets via currentTime listener
+        });
+
+        // Sync play/pause button text
+        mp.setOnPlaying(() -> playButton.setText("⏸ Pause"));
+        mp.setOnPaused(() -> playButton.setText("▶ Play"));
+        mp.setOnStopped(() -> playButton.setText("▶ Play"));
+    }
+
+    private String formatTime(Duration d) {
+        if (d == null || d.isUnknown() || d.isIndefinite()) return "0:00";
+        int totalSec = (int) d.toSeconds();
+        int min = totalSec / 60;
+        int sec = totalSec % 60;
+        return min + ":" + String.format("%02d", sec);
+    }
+
+    /* ========== Volume (via payment) ========== */
 
     @FXML
     private void onApplyVolume() {

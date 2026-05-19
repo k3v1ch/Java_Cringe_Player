@@ -80,7 +80,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Копирует все зависимости в target/libs (для jpackage --input) -->
+            <!-- Copies all dependencies to target/libs for jpackage -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
@@ -98,9 +98,7 @@
                 </executions>
             </plugin>
 
-            <!-- Fat-jar для jpackage: все зависимости (gson + JavaFX classes)
-                 объединяются в один jar; нативные JavaFX-библиотеки придут
-                 через --module-path jmods. -->
+            <!-- Fat-jar: all deps merged into one jar. JavaFX natives come from jmods. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -135,9 +133,7 @@
                                     </excludes>
                                 </filter>
                             </filters>
-                            <!-- ВАЖНО: JavaFX исключаем из fat-jar, т.к. jpackage
-                                 поставляет их через --module-path jmods. Иначе
-                                 split-package конфликт между classpath и module path. -->
+                            <!-- Exclude JavaFX from fat-jar: jpackage provides them via jmods. -->
                             <artifactSet>
                                 <excludes>
                                     <exclude>org.openjfx:*</exclude>

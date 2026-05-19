@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls \"C:/Program Files/\" 2>/dev/null | head -30)"
+      "Bash(ls \"C:/Program Files/\" 2>/dev/null | head -30)",
+      "PowerShell(jpackage --version 2>&1)",
+      "PowerShell($paths = @\\(\"C:\\\\Users\\\\viplu\\\\Desktop\\\\cringe-crash.log\", \"C:\\\\Users\\\\viplu\\\\cringe-crash.log\", \"C:\\\\Users\\\\viplu\\\\Desktop\\\\Java_Cringe_Player\\\\cringe-crash.log\", \"C:\\\\Users\\\\viplu\\\\Desktop\\\\Java_Cringe_Player\\\\cringe-volume\\\\frontend\\\\cringe-crash.log\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { Write-Output \"FOUND: $p\"; Get-Content $p } else { Write-Output \"NOT FOUND: $p\" } })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\viplu\\\\Desktop\\\\Java_Cringe_Player\\\\cringe-volume\\\\frontend\\\\target\\\\installer\" | Select-Object Name, @{N='SizeMB';E={[math]::Round\\($_.Length/1MB,1\\)}})"
     ]
   }
 }

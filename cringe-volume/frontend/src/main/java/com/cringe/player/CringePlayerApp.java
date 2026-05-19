@@ -23,7 +23,7 @@ public class CringePlayerApp extends Application {
         );
         Parent root = loader.load();
 
-        Scene scene = new Scene(root, 520, 500);
+        Scene scene = new Scene(root, 520, 560);
         primaryStage.setTitle("Cringe Volume Player");
         primaryStage.setScene(scene);
         primaryStage.setResizable(false);

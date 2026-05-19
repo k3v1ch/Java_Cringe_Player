@@ -1,110 +1,102 @@
 @echo off
 REM ============================================================
-REM  Сборка Cringe Volume Player в .exe через jpackage
-REM
-REM  Требования:
-REM    - JDK 17+ (с jpackage в PATH)
-REM    - Maven (или встроенный в IntelliJ, путь в SET MVN ниже)
-REM    - JavaFX jmods (скачать с https://gluonhq.com/products/javafx/)
-REM    - WiX Toolset 3.x (только для --type exe / msi установщика)
-REM
-REM  Перед запуском:
-REM    1. Скачайте JavaFX jmods для Windows: https://gluonhq.com/products/javafx/
-REM    2. Распакуйте и укажите путь ниже в JAVAFX_JMODS
-REM    3. (опционально) Положите clown.ico в src\main\resources\icons\
+REM  Build Cringe Volume Player -> standalone .exe installer
+REM  Output: target\installer\Cringe Volume Player-1.0.0.exe
 REM ============================================================
 
-REM === НАСТРОЙКИ ===
-SET JAVAFX_JMODS=C:\Users\viplu\Desktop\javafx-jmods-17.0.19
-SET APP_VERSION=1.0.0
-SET BACKEND_URL=https://pay.vernovpn.com
-SET MVN="C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2.2\plugins\maven\lib\maven3\bin\mvn.cmd"
+REM === CONFIG ===
+SET "JAVAFX_JMODS=C:\Users\viplu\Desktop\javafx-jmods-17.0.19"
+SET "APP_VERSION=1.0.0"
+SET "BACKEND_URL=https://pay.vernovpn.com"
+SET "MVN=C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2.2\plugins\maven\lib\maven3\bin\mvn.cmd"
 
-REM === ПРОВЕРКИ ===
-if not exist "%JAVAFX_JMODS%" (
-    echo ОШИБКА: JAVAFX_JMODS не существует: %JAVAFX_JMODS%
-    echo Скачайте jmods с https://gluonhq.com/products/javafx/
+REM Add WiX to PATH immediately (path contains parentheses, unsafe inside if-blocks)
+SET "PATH=C:\Program Files (x86)\WiX Toolset v3.14\bin;%PATH%"
+
+REM === CHECKS ===
+echo.
+echo ========== Environment check ==========
+
+if not exist "%JAVAFX_JMODS%\javafx.base.jmod" (
+    echo [X] JAVAFX_JMODS not found: %JAVAFX_JMODS%
     pause
     exit /b 1
 )
+echo [OK] JavaFX jmods
 
 where jpackage >nul 2>&1
 if errorlevel 1 (
-    echo ОШИБКА: jpackage не найден в PATH. Установите JDK 17+ или добавьте в PATH.
+    echo [X] jpackage not found. Install JDK 17+.
     pause
     exit /b 1
 )
+echo [OK] jpackage
 
-REM === СБОРКА JAR ===
-echo [1/3] Сборка Maven (может занять несколько минут при первом запуске)...
-call %MVN% clean package -DskipTests
+where candle >nul 2>&1
 if errorlevel 1 (
-    echo ОШИБКА: Maven сборка не удалась
+    echo [X] WiX not in PATH.
+    pause
+    exit /b 1
+)
+echo [OK] WiX Toolset
+echo [OK] Backend: %BACKEND_URL%
+echo ========================================
+echo.
+
+REM === PRE-CLEAN: delete old installer if it exists (may be locked) ===
+if exist "target\installer" (
+    del /f /q "target\installer\*.exe" >nul 2>&1
+    rmdir /s /q "target\installer" >nul 2>&1
+)
+
+REM === STEP 1: FAT-JAR (use 'package' not 'clean package' to avoid locked file issues) ===
+echo [1/3] Maven build...
+call "%MVN%" package -DskipTests -q
+if errorlevel 1 (
+    echo [X] Maven build failed.
+    echo     Run manually: call "%MVN%" package -DskipTests
     pause
     exit /b 1
 )
 
-REM Проверим, что fat-jar собрался
-if not exist target\volume-frontend-%APP_VERSION%-fat.jar (
-    echo ОШИБКА: fat-jar не найден: target\volume-frontend-%APP_VERSION%-fat.jar
-    echo Возможно, maven-shade-plugin не отработал. Проверьте pom.xml
+if not exist "target\volume-frontend-%APP_VERSION%-fat.jar" (
+    echo [X] fat-jar not found
     pause
     exit /b 1
 )
+echo [OK] Fat-jar built
+echo.
 
-REM === ОЧИСТКА ПРЕДЫДУЩЕЙ СБОРКИ ===
-echo [2/3] Подготовка...
-if exist target\installer rmdir /s /q target\installer
-
-REM Готовим папку с одним fat-jar (jpackage заберёт всё из target\app)
+REM === STEP 2: PREPARE ===
+echo [2/3] Preparing...
 if exist target\app rmdir /s /q target\app
 mkdir target\app
-copy /Y target\volume-frontend-%APP_VERSION%-fat.jar target\app\cringe-player.jar >nul
+copy /Y "target\volume-frontend-%APP_VERSION%-fat.jar" "target\app\cringe-player.jar" >nul
+echo [OK] Ready
+echo.
 
-REM === JPACKAGE ===
-echo [3/3] Создание .exe через jpackage (это занимает 1-3 минуты)...
+REM === STEP 3: JPACKAGE ===
+echo [3/3] jpackage: building installer (1-3 min)...
 
-SET ICON_ARG=
-if exist src\main\resources\icons\clown.ico (
-    SET ICON_ARG=--icon src\main\resources\icons\clown.ico
-) else (
-    echo [!] clown.ico не найден - будет использована иконка по умолчанию
-)
+REM Output to a fresh directory (avoid conflict with locked old exe)
+if exist "target\build-out" rmdir /s /q "target\build-out"
 
-jpackage ^
-  --type app-image ^
-  --name "Cringe Volume Player" ^
-  --app-version %APP_VERSION% ^
-  --vendor "CringeWare" ^
-  --input target\app ^
-  --main-jar cringe-player.jar ^
-  --main-class com.cringe.player.Launcher ^
-  --module-path "%JAVAFX_JMODS%" ^
-  --add-modules javafx.controls,javafx.fxml,javafx.media ^
-  --java-options "-DPUBLIC_BACKEND_URL=%BACKEND_URL%" ^
-  --java-options "-Dfile.encoding=UTF-8" ^
-  %ICON_ARG% ^
-  --dest target\installer
+SET "ICON_OPT="
+if exist "src\main\resources\icons\clown.ico" SET "ICON_OPT=--icon src\main\resources\icons\clown.ico"
+
+jpackage --type exe --name "Cringe Volume Player" --app-version %APP_VERSION% --vendor "CringeWare" --description "Audio player where you pay to change volume" --input target\app --main-jar cringe-player.jar --main-class com.cringe.player.Launcher --module-path "%JAVAFX_JMODS%" --add-modules javafx.controls,javafx.fxml,javafx.media,java.net.http,jdk.crypto.ec --java-options "-DPUBLIC_BACKEND_URL=%BACKEND_URL%" --java-options "-Dfile.encoding=UTF-8" --win-dir-chooser --win-shortcut --win-menu --win-menu-group "CringeWare" %ICON_OPT% --dest target\build-out
 
 if errorlevel 1 (
     echo.
-    echo ОШИБКА: jpackage не удался
-    echo.
-    echo Проверьте:
-    echo   - Путь JAVAFX_JMODS существует и содержит .jmod файлы
-    echo   - JDK 17+ установлен и jpackage в PATH
-    echo   - Если clown.ico указан - что это валидный 256x256 ICO
+    echo [X] jpackage failed!
     pause
     exit /b 1
 )
 
 echo.
 echo ============================================
-echo   ГОТОВО!
-echo   .exe находится в:
-echo   %CD%\target\installer\Cringe Volume Player\Cringe Volume Player.exe
-echo.
-echo   Для распространения - копируйте всю папку
-echo   "Cringe Volume Player" (с runtime внутри).
+echo   DONE!
+echo   Installer: target\build-out\Cringe Volume Player-%APP_VERSION%.exe
+echo   Send this .exe to anyone. No Java needed.
 echo ============================================
 pause

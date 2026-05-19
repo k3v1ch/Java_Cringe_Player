@@ -3,6 +3,7 @@ module com.cringe.player {
     requires javafx.fxml;
     requires javafx.media;
     requires java.net.http;
+    requires java.desktop;
     requires com.google.gson;
 
     opens com.cringe.player.ui to javafx.fxml;
@@ -13,4 +14,5 @@ module com.cringe.player {
     exports com.cringe.player.player;
     exports com.cringe.player.payment;
     exports com.cringe.player.ui;
+    exports com.cringe.player.update;
 }

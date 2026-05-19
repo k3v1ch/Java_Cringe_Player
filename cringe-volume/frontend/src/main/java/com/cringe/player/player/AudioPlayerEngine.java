@@ -2,6 +2,7 @@ package com.cringe.player.player;
 
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
+import javafx.util.Duration;
 
 import java.io.File;
 
@@ -15,7 +16,7 @@ public class AudioPlayerEngine {
     }
 
     /**
-     * Загружает трек по URL (http:// стрим с бэкенда).
+     * Loads a track from URL (http:// stream from backend).
      */
     public void loadFromUrl(String url) {
         loadFromUri(url);
@@ -35,10 +36,33 @@ public class AudioPlayerEngine {
         }
     }
 
+    public void pause() {
+        if (mediaPlayer != null) {
+            mediaPlayer.pause();
+        }
+    }
+
     public void stop() {
         if (mediaPlayer != null) {
             mediaPlayer.stop();
         }
+    }
+
+    /**
+     * Seek to given position in seconds.
+     */
+    public void seek(double seconds) {
+        if (mediaPlayer != null) {
+            mediaPlayer.seek(Duration.seconds(seconds));
+        }
+    }
+
+    /**
+     * Returns the underlying MediaPlayer (for wiring UI listeners).
+     * May be null if no track is loaded.
+     */
+    public MediaPlayer getMediaPlayer() {
+        return mediaPlayer;
     }
 
     public void setVolume(int volumePercent) {
@@ -54,6 +78,11 @@ public class AudioPlayerEngine {
 
     public boolean isLoaded() {
         return mediaPlayer != null;
+    }
+
+    public boolean isPlaying() {
+        return mediaPlayer != null
+                && mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING;
     }
 
     public void dispose() {
