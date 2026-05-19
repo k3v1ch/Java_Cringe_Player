@@ -45,3 +45,5 @@ backend/uploads/
 # --- ОС ---
 .DS_Store
 Thumbs.db
+
+.claude
