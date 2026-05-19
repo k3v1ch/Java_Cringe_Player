@@ -75,8 +75,10 @@ mvn javafx:run -Dbackend.url=https://pay.vernovpn.com
 | `SERVER_PORT`            | `8080`                         | Порт бэкенда                             |
 | `PUBLIC_BACKEND_URL`     | `http://localhost:8080`        | Публичный URL бэкенда (за прокси)        |
 | `PUBLIC_PAY_BASE_URL`    | `http://localhost:8080`        | URL страницы оплаты (за прокси)          |
-| `PAYMENT_CALLBACK_URL`   | `.../api/payments/webhook`     | URL вебхука                              |
+| `PAYMENT_CALLBACK_URL`   | `.../api/payments/webhook`     | Публичный URL вебхука (документация)     |
+| `PAYMENT_CALLBACK_INTERNAL_URL` | `http://localhost:8080/...` | **Внутренний** URL для self-вебхука (Docker→сам себя) |
 | `MUSIC_DIR`              | `./music`                      | Директория с аудиофайлами                |
+| `CORS_EXTRA_ORIGINS`     | —                              | Доп. CORS-домены через запятую           |
 | `SMTP_HOST`              | `localhost`                    | SMTP-сервер для чеков                    |
 | `SMTP_PORT`              | `465`                          | Порт SMTP (465 = SSL/implicit TLS)       |
 | `SMTP_USER`              | —                              | SMTP логин                               |
@@ -197,31 +199,78 @@ caddy run --config /etc/caddy/Caddyfile
 
 ## Сборка JavaFX .exe (jpackage)
 
-Требования: JDK 17+, Maven, WiX Toolset (для .msi на Windows).
+### Требования
+- JDK 17+ с `jpackage` в PATH
+- Maven 3.8+ (или встроенный в IntelliJ — `<IDEA>/plugins/maven/lib/maven3/bin/mvn.cmd`)
+- JavaFX **jmods** — [gluonhq.com/products/javafx](https://gluonhq.com/products/javafx/),
+  вариант **jmods** для нужной OS
+- WiX Toolset 3.x — **только** если нужен `.exe`/`.msi` установщик; для app-image не нужен
+- Иконка `clown.ico` (256×256 ICO) в `frontend/src/main/resources/icons/` — **опционально**
 
-```bash
-# 1. Собрать fat-jar
-cd frontend
-mvn clean package
+### Быстрая сборка (Windows)
 
-# 2. Создать .exe
-jpackage \
-  --input target \
-  --name "Cringe Volume Player" \
-  --main-jar volume-frontend-1.0.0.jar \
-  --main-class com.cringe.player.CringePlayerApp \
-  --type app-image \
-  --icon src/main/resources/icons/clown.ico \
-  --app-version 1.0.0 \
-  --vendor "CringeWare" \
-  --java-options "-Dbackend.url=https://pay.vernovpn.com" \
-  --module-path /path/to/javafx-jmods-17.0.11
+Открой `cringe-volume/frontend/build-exe.bat`, поправь:
+```bat
+SET JAVAFX_JMODS=C:\путь\до\javafx-jmods-17.0.x
+SET BACKEND_URL=https://pay.vernovpn.com
+SET MVN="C:\путь\до\mvn.cmd"
 ```
 
-Для `.msi` установщика замените `--type app-image` на `--type msi`.
+Запусти в PowerShell:
+```powershell
+cd cringe-volume\frontend
+.\build-exe.bat
+```
 
-Положите `clown.ico` (256x256, ICO) в `frontend/src/main/resources/icons/`.
-Для иконки окна JavaFX — `clown.png` (PNG) в ту же директорию.
+Результат: `frontend/target/installer/Cringe Volume Player/Cringe Volume Player.exe` —
+**самодостаточная папка** с встроенной JRE. Для распространения копируй всю папку.
+
+### Ручная сборка (кроссплатформенно)
+
+```bash
+cd cringe-volume/frontend
+
+# 1. Fat-jar (все зависимости КРОМЕ JavaFX — она придёт через jmods)
+mvn clean package -DskipTests
+
+# 2. Подготовить отдельную папку с одним jar
+mkdir -p target/app
+cp target/volume-frontend-1.0.0-fat.jar target/app/cringe-player.jar
+
+# 3. jpackage
+jpackage \
+  --type app-image \
+  --name "Cringe Volume Player" \
+  --app-version 1.0.0 \
+  --vendor "CringeWare" \
+  --input target/app \
+  --main-jar cringe-player.jar \
+  --main-class com.cringe.player.Launcher \
+  --module-path /path/to/javafx-jmods-17.0.11 \
+  --add-modules javafx.controls,javafx.fxml,javafx.media \
+  --java-options "-Dbackend.url=https://pay.vernovpn.com" \
+  --icon src/main/resources/icons/clown.ico \
+  --dest target/installer
+```
+
+### Типы вывода
+
+| `--type`     | Что получится                       | Требует WiX |
+|--------------|-------------------------------------|-------------|
+| `app-image`  | Папка с .exe внутри (рекомендуется) | Нет         |
+| `exe`        | Один .exe-установщик                | Да          |
+| `msi`        | .msi-установщик                     | Да          |
+
+### Зачем `Launcher`
+`CringePlayerApp` наследует `Application`, и jpackage **не может** использовать
+такой класс как `--main-class` напрямую — JavaFX runtime требует обёртку.
+`com.cringe.player.Launcher` — простой класс, вызывающий `CringePlayerApp.main()`.
+
+### Почему fat-jar исключает JavaFX
+`maven-shade-plugin` собирает все зависимости в один jar, **кроме** `org.openjfx:*`.
+JavaFX поставляется в jpackage через `--module-path jmods`. Если бы JavaFX-классы
+были и в fat-jar (classpath), и в jmods (module path), JVM бросил бы
+split-package error.
 
 ## Безопасность
 

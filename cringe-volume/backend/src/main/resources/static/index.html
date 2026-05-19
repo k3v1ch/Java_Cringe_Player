@@ -18,7 +18,9 @@
 
     <!-- Треки -->
     <div class="card">
-        <h2>📂 Библиотека треков</h2>
+        <h2>📂 Библиотека треков
+            <button class="btn btn-sm btn-outline" onclick="loadTracks()" style="float:right;font-size:11px;padding:4px 10px">🔄</button>
+        </h2>
         <div class="track-list" id="trackList">
             <div class="empty-msg">Загрузка...</div>
         </div>
@@ -28,18 +30,36 @@
         </div>
     </div>
 
-    <!-- Плеер -->
+    <!-- Кастомный плеер БЕЗ ползунка громкости -->
     <div class="card">
         <h2>🎧 Плеер</h2>
         <div class="player-section">
             <div class="now-playing" id="nowPlaying">Выберите трек из списка</div>
-            <audio id="audioPlayer" controls preload="metadata"></audio>
+
+            <!-- скрытый <audio> — управляется через JS, без видимых controls,
+                 чтобы пользователь НЕ мог обойти платную регулировку громкости -->
+            <audio id="audioPlayer" preload="metadata"
+                   controlsList="nodownload noplaybackrate"
+                   oncontextmenu="return false"></audio>
+
+            <!-- кастомные элементы управления: play/pause + seek, БЕЗ volume -->
+            <div class="custom-player">
+                <button class="play-btn" id="playPauseBtn" onclick="togglePlay()" disabled>▶</button>
+                <div class="time-display" id="currentTime">0:00</div>
+                <input type="range" id="seekBar" class="seek-bar"
+                       min="0" max="0" step="0.1" value="0"
+                       oninput="onSeek(this.value)" disabled/>
+                <div class="time-display" id="duration">0:00</div>
+            </div>
         </div>
     </div>
 
-    <!-- Громкость -->
+    <!-- Громкость (платная — единственный способ изменить громкость) -->
     <div class="card">
         <h2>💰 Громкость (платная)</h2>
+        <div class="current-volume">
+            Текущая: <strong id="currentVolume">50%</strong>
+        </div>
         <div class="volume-row">
             <span class="volume-label">Новая громкость:</span>
             <input type="number" id="volumeInput" min="0" max="100" value="50" step="1"/>

@@ -271,19 +271,47 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: email || null })
             });
-            if (!resp.ok) throw new Error('fail');
+
+            if (!resp.ok) {
+                const errBody = await resp.text();
+                throw new Error('HTTP ' + resp.status + ': ' + errBody);
+            }
+
+            // дополнительно проверим статус через GET — на случай если self-webhook
+            // пометил paid, но клиент ещё не получил ответа /process
+            const okStatus = await pollUntilPaid(TOKEN, 6);  // 6 попыток × 500ms = 3 сек
 
             const elapsed = Date.now() - start;
             await new Promise(r => setTimeout(r, Math.max(0, 2500 - elapsed)));
 
             document.getElementById('processingOverlay').classList.remove('active');
-            document.getElementById('successOverlay').classList.add('active');
+            if (okStatus) {
+                document.getElementById('successOverlay').classList.add('active');
+            } else {
+                throw new Error('Платёж не подтверждён (статус не paid)');
+            }
         } catch(e) {
+            console.error('pay error:', e);
             document.getElementById('processingOverlay').classList.remove('active');
             document.getElementById('mainContent').style.display = 'block';
             btn.disabled = false;
-            alert('Ошибка обработки платежа');
+            alert('Ошибка обработки платежа: ' + e.message);
         }
+    }
+
+    async function pollUntilPaid(token, maxAttempts) {
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                const r = await fetch('/api/payments/' + token + '/status');
+                if (r.ok) {
+                    const data = await r.json();
+                    if (data.status === 'paid') return true;
+                    if (data.status === 'expired') return false;
+                }
+            } catch (e) { /* retry */ }
+            await new Promise(res => setTimeout(res, 500));
+        }
+        return false;
     }
 
     /* ---------- init ---------- */

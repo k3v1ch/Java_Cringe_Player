@@ -29,7 +29,11 @@ payment:
   mode: ${PAYMENT_MODE:mock}
   webhook-secret: ${ROLLYPAY_SIGNING_SECRET:cringe-super-secret-key-2024}
   pay-base-url: ${PUBLIC_PAY_BASE_URL:http://localhost:8080}
+  # Внешний URL (для документации/публичных нужд)
   callback-url: ${PAYMENT_CALLBACK_URL:http://localhost:8080/api/payments/webhook}
+  # ВНУТРЕННИЙ URL для self-вебхука: контейнер вызывает себя через localhost,
+  # а не через публичный домен (иначе цикл через Caddy + потенциальный SSL fail).
+  callback-internal-url: ${PAYMENT_CALLBACK_INTERNAL_URL:http://localhost:${SERVER_PORT:8080}/api/payments/webhook}
 
 # --- Музыка ---
 music:

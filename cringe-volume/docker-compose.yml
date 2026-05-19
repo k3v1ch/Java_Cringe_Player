@@ -7,8 +7,12 @@ services:
       - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
     env_file:
       - .env
+    environment:
+      # внутри контейнера music лежит в /app/music
+      MUSIC_DIR: /app/music
+      # self-webhook через localhost (внутри контейнера)
+      PAYMENT_CALLBACK_INTERNAL_URL: http://localhost:${SERVER_PORT:-8080}/api/payments/webhook
     volumes:
-      - music:/app/music
-
-volumes:
-  music:
+      # bind mount: ./music на хосте ↔ /app/music в контейнере
+      # файлы, положенные в ./music, сразу видны бэкенду
+      - ./music:/app/music

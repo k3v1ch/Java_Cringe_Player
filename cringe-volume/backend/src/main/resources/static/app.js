@@ -5,24 +5,31 @@ const API = window.location.origin + '/api';
 /* ---------- state ---------- */
 let currentTrack = null;
 let audioEl = null;
+let currentVolume = 50; // 0..100, меняется ТОЛЬКО через оплату
 
 /* ---------- DOM refs ---------- */
-const $tracks     = document.getElementById('trackList');
-const $nowPlaying = document.getElementById('nowPlaying');
-const $volumeIn   = document.getElementById('volumeInput');
-const $status     = document.getElementById('statusBar');
-const $uploadFile = document.getElementById('uploadFile');
+const $tracks         = document.getElementById('trackList');
+const $nowPlaying     = document.getElementById('nowPlaying');
+const $volumeIn       = document.getElementById('volumeInput');
+const $status         = document.getElementById('statusBar');
+const $uploadFile     = document.getElementById('uploadFile');
+const $playPauseBtn   = document.getElementById('playPauseBtn');
+const $seekBar        = document.getElementById('seekBar');
+const $currentTime    = document.getElementById('currentTime');
+const $duration       = document.getElementById('duration');
+const $currentVolume  = document.getElementById('currentVolume');
 
 /* ====== tracks ====== */
 
 async function loadTracks() {
     try {
-        const res = await fetch(API + '/audio/tracks');
+        const res = await fetch(API + '/audio/tracks', { cache: 'no-store' });
         if (!res.ok) throw new Error(res.statusText);
         const tracks = await res.json();
         renderTracks(tracks);
+        setStatus('Треков на сервере: ' + tracks.length);
     } catch (e) {
-        $tracks.innerHTML = '<div class="empty-msg">Ошибка загрузки треков</div>';
+        $tracks.innerHTML = '<div class="empty-msg">Ошибка загрузки треков: ' + escHtml(e.message) + '</div>';
     }
 }
 
@@ -34,26 +41,39 @@ function renderTracks(tracks) {
     $tracks.innerHTML = tracks.map(t => {
         const sizeMB = (t.sizeBytes / 1048576).toFixed(1);
         const active = currentTrack === t.filename ? ' active' : '';
-        return `<div class="track-item${active}" onclick="selectTrack('${escHtml(t.filename)}')">
+        // dataset избегает проблем с кавычками в имени файла
+        return `<div class="track-item${active}" data-filename="${escHtml(t.filename)}">
                     <span class="name">${escHtml(t.filename)}</span>
                     <span class="size">${sizeMB} MB</span>
                 </div>`;
     }).join('');
+
+    // делегирование клика
+    $tracks.querySelectorAll('.track-item').forEach(item => {
+        item.addEventListener('click', () => selectTrack(item.dataset.filename));
+    });
 }
 
 function selectTrack(filename) {
     currentTrack = filename;
+    // правильное URL-кодирование, чтобы кириллица/пробелы работали
     const url = API + '/audio/tracks/' + encodeURIComponent(filename) + '/stream';
 
-    if (!audioEl) {
-        audioEl = document.getElementById('audioPlayer');
-    }
     audioEl.src = url;
     audioEl.load();
+    audioEl.volume = currentVolume / 100;
 
     $nowPlaying.textContent = filename;
     setStatus('Трек выбран: ' + filename);
-    loadTracks();  // re-render active state
+
+    $playPauseBtn.disabled = false;
+    $seekBar.disabled = false;
+    $playPauseBtn.textContent = '▶';
+
+    // обновить active в списке без перезапроса
+    document.querySelectorAll('.track-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.filename === filename);
+    });
 }
 
 /* ====== upload ====== */
@@ -77,11 +97,38 @@ async function uploadTrack() {
         const data = await res.json();
         setStatus('Файл загружен: ' + data.fileName);
         $uploadFile.value = '';
-        loadTracks();
+        await loadTracks();
         selectTrack(data.fileName);
     } catch (e) {
         setStatus('Ошибка загрузки: ' + e.message);
+        alert('Ошибка загрузки: ' + e.message);
     }
+}
+
+/* ====== custom player controls ====== */
+
+function togglePlay() {
+    if (!audioEl.src) return;
+    if (audioEl.paused) {
+        audioEl.play().catch(err => {
+            console.error('play error:', err);
+            setStatus('Ошибка воспроизведения: ' + err.message);
+        });
+    } else {
+        audioEl.pause();
+    }
+}
+
+function onSeek(value) {
+    if (!isFinite(audioEl.duration)) return;
+    audioEl.currentTime = parseFloat(value);
+}
+
+function formatTime(sec) {
+    if (!isFinite(sec) || sec < 0) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
 }
 
 /* ====== volume (cringe payment) ====== */
@@ -120,7 +167,10 @@ async function openPaymentModal(targetVolume) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ targetVolume })
         });
-        if (!res.ok) throw new Error('Ошибка создания платежа');
+        if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error('HTTP ' + res.status + ': ' + errBody);
+        }
         const payment = await res.json();
 
         $mTitle.textContent  = 'Оплата изменения громкости';
@@ -128,16 +178,23 @@ async function openPaymentModal(targetVolume) {
         $mPrice.textContent  = payment.totalAmount + ' ₽';
         $mDetail.textContent = 'Базовая: ' + payment.basePrice + ' ₽ + Комиссия: ' + payment.commission + ' ₽';
         $mBody.innerHTML     = '';
+        // attribute escaping для url + token
+        const safeUrl = escHtml(payment.payUrl);
+        const safeToken = escHtml(payment.token);
+        const safeVolume = String(targetVolume);
         $mActions.innerHTML  =
-            '<button class="btn btn-accent btn-sm" onclick="payInBrowser(\'' + payment.payUrl + '\',\'' + payment.token + '\')">Оплатить в браузере</button>' +
+            '<button class="btn btn-accent btn-sm" data-payurl="' + safeUrl +
+            '" data-token="' + safeToken + '" data-vol="' + safeVolume +
+            '" onclick="payInBrowser(this.dataset.payurl, this.dataset.token, parseInt(this.dataset.vol))">Оплатить в браузере</button>' +
             '<button class="btn btn-outline btn-sm" onclick="closeModal()">Отмена</button>';
     } catch (e) {
+        console.error('createPayment error:', e);
         $mTitle.textContent = 'Ошибка';
         $mBody.innerHTML    = '<p style="color:var(--accent)">' + escHtml(e.message) + '</p>';
     }
 }
 
-function payInBrowser(payUrl, token) {
+function payInBrowser(payUrl, token, targetVolume) {
     window.open(payUrl, '_blank');
 
     const $mBody    = document.getElementById('modalBody');
@@ -145,23 +202,23 @@ function payInBrowser(payUrl, token) {
     $mBody.innerHTML   = '<div class="spinner"></div><p style="font-size:13px;color:var(--muted);margin-top:8px">Ожидание оплаты...</p>';
     $mActions.innerHTML = '<button class="btn btn-outline btn-sm" onclick="closeModal()">Отмена</button>';
 
-    pollPayment(token);
+    pollPayment(token, targetVolume);
 }
 
-async function pollPayment(token) {
+async function pollPayment(token, targetVolume) {
     const poll = async () => {
         try {
             const res = await fetch(API + '/payments/' + token + '/status');
-            if (!res.ok) return;
-            const data = await res.json();
-
-            if (data.status === 'paid') {
-                onPaymentSuccess();
-                return;
-            }
-            if (data.status === 'expired') {
-                onPaymentExpired();
-                return;
+            if (res.ok) {
+                const data = await res.json();
+                if (data.status === 'paid') {
+                    onPaymentSuccess(targetVolume);
+                    return;
+                }
+                if (data.status === 'expired') {
+                    onPaymentExpired();
+                    return;
+                }
             }
         } catch (e) { /* keep polling */ }
         setTimeout(poll, 2000);
@@ -169,7 +226,7 @@ async function pollPayment(token) {
     setTimeout(poll, 2000);
 }
 
-function onPaymentSuccess() {
+function onPaymentSuccess(targetVolume) {
     const $mTitle   = document.getElementById('modalTitle');
     const $mBody    = document.getElementById('modalBody');
     const $mActions = document.getElementById('modalActions');
@@ -180,14 +237,17 @@ function onPaymentSuccess() {
     $mBody.innerHTML    = '<p style="color:var(--green);font-weight:700">Громкость изменена</p>';
     $mActions.innerHTML = '<button class="btn btn-accent btn-sm" onclick="closeModal()">Закрыть</button>';
 
-    // apply volume locally
-    const vol = parseInt($volumeIn.value, 10);
-    if (audioEl && !isNaN(vol)) {
-        audioEl.volume = vol / 100;
-    }
-    setStatus('Громкость: ' + vol + '%');
+    // применяем громкость локально — это ЕДИНСТВЕННОЕ место, где она меняется
+    applyVolumeNow(targetVolume);
 
     setTimeout(closeModal, 2000);
+}
+
+function applyVolumeNow(vol) {
+    currentVolume = Math.max(0, Math.min(100, vol));
+    audioEl.volume = currentVolume / 100;
+    $currentVolume.textContent = currentVolume + '%';
+    setStatus('Громкость: ' + currentVolume + '%');
 }
 
 function onPaymentExpired() {
@@ -211,22 +271,49 @@ function setStatus(msg) {
 }
 
 function escHtml(s) {
+    if (s == null) return '';
     const d = document.createElement('div');
-    d.textContent = s;
+    d.textContent = String(s);
     return d.innerHTML;
 }
 
 /* ====== init ====== */
 document.addEventListener('DOMContentLoaded', () => {
-    loadTracks();
     audioEl = document.getElementById('audioPlayer');
+    audioEl.volume = currentVolume / 100;
+
+    // ЗАЩИТА: любая попытка изменить volume извне (например, через DevTools)
+    // приведёт к откату к currentVolume. Свойство volume — не настоящий ключ объекта,
+    // это accessor; перехватить его 100% надёжно нельзя, но мы сбрасываем при volumechange.
+    audioEl.addEventListener('volumechange', () => {
+        const expected = currentVolume / 100;
+        // допускаем малую погрешность из-за float
+        if (Math.abs(audioEl.volume - expected) > 0.01) {
+            audioEl.volume = expected;
+        }
+    });
+
+    // обновление прогресса
+    audioEl.addEventListener('loadedmetadata', () => {
+        $duration.textContent = formatTime(audioEl.duration);
+        $seekBar.max = audioEl.duration || 0;
+    });
+    audioEl.addEventListener('timeupdate', () => {
+        $currentTime.textContent = formatTime(audioEl.currentTime);
+        $seekBar.value = audioEl.currentTime;
+    });
+    audioEl.addEventListener('play', () => { $playPauseBtn.textContent = '⏸'; });
+    audioEl.addEventListener('pause', () => { $playPauseBtn.textContent = '▶'; });
+    audioEl.addEventListener('ended', () => { $playPauseBtn.textContent = '▶'; });
+    audioEl.addEventListener('error', (e) => {
+        console.error('audio error:', e, audioEl.error);
+        setStatus('Ошибка воспроизведения трека');
+    });
 
     $uploadFile.addEventListener('change', uploadTrack);
 
-    // sync volume with audio element
-    audioEl.addEventListener('volumechange', () => {
-        // no-op — volume is controlled via payment
-    });
+    $currentVolume.textContent = currentVolume + '%';
 
+    loadTracks();
     setStatus('Готов к работе');
 });

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:/Program Files/\" 2>/dev/null | head -30)"
+    ]
+  }
+}
