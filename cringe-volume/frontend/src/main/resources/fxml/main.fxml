@@ -95,7 +95,7 @@
         <font><Font size="11"/></font>
     </Label>
 
-    <Label fx:id="versionLabel" text="v1.0.1"
+    <Label fx:id="versionLabel" text="v1.0.3"
            style="-fx-text-fill: #555568; -fx-font-size: 10px;"
            VBox.vgrow="NEVER"/>
 </VBox>

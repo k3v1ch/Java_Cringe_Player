@@ -27,7 +27,9 @@ public class AudioPlayerEngine {
         Media media = new Media(uri);
         mediaPlayer = new MediaPlayer(media);
         mediaPlayer.setVolume(volume);
-        mediaPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+        // No INDEFINITE cycle — it makes getTotalDuration() return INDEFINITE
+        // which breaks the seek slider. Looping is handled via setOnEndOfMedia in MainController.
+        mediaPlayer.setCycleCount(1);
     }
 
     public void play() {

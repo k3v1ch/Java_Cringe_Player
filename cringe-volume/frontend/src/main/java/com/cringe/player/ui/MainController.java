@@ -42,6 +42,7 @@ public class MainController {
     private final AudioApiClient apiClient = new AudioApiClient();
     private File currentFile;
     private boolean seeking = false;
+    private long seekTimestamp = 0;   // debounce: ignore currentTime updates right after seek
 
     @FXML
     public void initialize() {
@@ -53,11 +54,13 @@ public class MainController {
         volumeLabel.setText("Громкость: 50%");
         statusLabel.setText("Загрузите или выберите трек");
 
-        // Seek slider: when user presses mouse — stop auto-updating
+        // Seek slider: capture value THEN seek, debounce prevents snap-back
         seekSlider.setOnMousePressed(e -> seeking = true);
         seekSlider.setOnMouseReleased(e -> {
+            double target = seekSlider.getValue();
+            seekTimestamp = System.currentTimeMillis();
             seeking = false;
-            playerEngine.seek(seekSlider.getValue());
+            playerEngine.seek(target);
         });
 
         refreshTracks();
@@ -110,7 +113,7 @@ public class MainController {
             playButton.setDisable(false);
             applyVolumeButton.setDisable(false);
             volumeField.setDisable(false);
-            seekSlider.setDisable(false);
+            // seekSlider stays disabled until duration is detected (in wireSeekSlider)
             statusLabel.setText("Трек готов: " + selected);
             wireSeekSlider();
         } catch (Exception e) {
@@ -149,7 +152,7 @@ public class MainController {
                     playButton.setDisable(false);
                     applyVolumeButton.setDisable(false);
                     volumeField.setDisable(false);
-                    seekSlider.setDisable(false);
+                    // seekSlider stays disabled until duration is detected
                     chooseFileButton.setDisable(false);
                     statusLabel.setText("Файл загружен. Готов к воспроизведению");
                     wireSeekSlider();
@@ -230,48 +233,112 @@ public class MainController {
 
     /* ========== Seek slider wiring ========== */
 
+    private boolean durationKnown = false;
+
     /**
-     * Called after loading a new track to wire MediaPlayer listeners
-     * to the seek slider and time labels.
+     * Reads the MEDIA duration (single file length), NOT totalDuration.
+     * totalDuration = cycleDuration * cycleCount, which is INDEFINITE
+     * when cycleCount is INDEFINITE (looping). That breaks the slider.
      */
+    private double getMediaDurationSec(MediaPlayer mp) {
+        // First try: Media.duration (inherent file length)
+        Duration d = mp.getMedia().getDuration();
+        if (d != null && !d.isUnknown() && !d.isIndefinite()) {
+            double s = d.toSeconds();
+            if (Double.isFinite(s) && s > 0) return s;
+        }
+        // Second try: cycleDuration (one loop length)
+        d = mp.getCycleDuration();
+        if (d != null && !d.isUnknown() && !d.isIndefinite()) {
+            double s = d.toSeconds();
+            if (Double.isFinite(s) && s > 0) return s;
+        }
+        return -1;
+    }
+
+    private javafx.animation.Timeline durationPollTimeline;
+
     private void wireSeekSlider() {
         MediaPlayer mp = playerEngine.getMediaPlayer();
         if (mp == null) return;
 
-        // Reset slider
+        // Reset state
+        seeking = false;
+        durationKnown = false;
         seekSlider.setValue(0);
+        seekSlider.setMax(1);
+        seekSlider.setDisable(true);     // ← LOCK slider until duration is known
         currentTimeLabel.setText("0:00");
-        durationLabel.setText("0:00");
+        durationLabel.setText("...");
 
-        // When media is ready — set slider max and duration label
-        mp.setOnReady(() -> {
-            double totalSec = mp.getTotalDuration().toSeconds();
-            seekSlider.setMax(totalSec);
-            durationLabel.setText(formatTime(mp.getTotalDuration()));
+        // Stop any previous poll
+        if (durationPollTimeline != null) durationPollTimeline.stop();
+
+        Runnable trySetDuration = () -> {
+            if (durationKnown) return;
+            double secs = getMediaDurationSec(mp);
+            if (secs <= 0) return;
+
+            durationKnown = true;
+            seekSlider.setMax(secs);
+            seekSlider.setDisable(false); // ← UNLOCK slider now that duration is real
+            durationLabel.setText(formatTime(Duration.seconds(secs)));
+            System.out.println("[Seek] Duration detected: " + secs + "s");
+
+            if (durationPollTimeline != null) durationPollTimeline.stop();
+        };
+
+        // Listeners — fire when JavaFX figures out the duration
+        mp.setOnReady(trySetDuration);
+        mp.getMedia().durationProperty().addListener((obs, o, n) -> trySetDuration.run());
+        mp.cycleDurationProperty().addListener((obs, o, n) -> trySetDuration.run());
+        mp.statusProperty().addListener((obs, o, n) -> {
+            System.out.println("[Seek] Status: " + n);
+            trySetDuration.run();
+        });
+        mp.setOnPlaying(() -> {
+            trySetDuration.run();
+            playButton.setText("⏸ Pause");
         });
 
-        // Update slider and time label as track plays
+        // Aggressive polling fallback — every 200ms for up to 15s
+        durationPollTimeline = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(Duration.millis(200), e -> trySetDuration.run())
+        );
+        durationPollTimeline.setCycleCount(75); // 75 * 200ms = 15s
+        durationPollTimeline.play();
+
+        // Slider follows playback position
         mp.currentTimeProperty().addListener((obs, oldVal, newVal) -> {
-            if (!seeking) {
-                seekSlider.setValue(newVal.toSeconds());
-            }
+            if (newVal == null) return;
+            double sec = newVal.toSeconds();
+            if (!Double.isFinite(sec)) return;
+
             currentTimeLabel.setText(formatTime(newVal));
+
+            boolean seekRecent = (System.currentTimeMillis() - seekTimestamp) < 1000;
+            if (!seeking && !seekRecent && durationKnown) {
+                seekSlider.setValue(sec);
+            }
+
+            if (!durationKnown) trySetDuration.run();
         });
 
-        // When track ends (cycle restarts)
-        mp.setOnEndOfMedia(() -> {
-            // INDEFINITE cycle — will auto-restart, slider resets via currentTime listener
-        });
-
-        // Sync play/pause button text
-        mp.setOnPlaying(() -> playButton.setText("⏸ Pause"));
         mp.setOnPaused(() -> playButton.setText("▶ Play"));
         mp.setOnStopped(() -> playButton.setText("▶ Play"));
+
+        // Manual loop
+        mp.setOnEndOfMedia(() -> {
+            mp.seek(Duration.ZERO);
+            mp.play();
+        });
     }
 
     private String formatTime(Duration d) {
-        if (d == null || d.isUnknown() || d.isIndefinite()) return "0:00";
-        int totalSec = (int) d.toSeconds();
+        if (d == null || d.isUnknown() || d.isIndefinite()) return "--:--";
+        double secs = d.toSeconds();
+        if (!Double.isFinite(secs) || secs < 0) return "--:--";
+        int totalSec = (int) secs;
         int min = totalSec / 60;
         int sec = totalSec % 60;
         return min + ":" + String.format("%02d", sec);

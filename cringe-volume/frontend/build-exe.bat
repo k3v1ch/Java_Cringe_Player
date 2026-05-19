@@ -6,7 +6,7 @@ REM ============================================================
 
 REM === CONFIG ===
 SET "JAVAFX_JMODS=C:\Users\viplu\Desktop\javafx-jmods-17.0.19"
-SET "APP_VERSION=1.0.1"
+SET "APP_VERSION=1.0.3"
 SET "BACKEND_URL=https://pay.vernovpn.com"
 SET "MVN=C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2.2\plugins\maven\lib\maven3\bin\mvn.cmd"
 
@@ -84,7 +84,7 @@ if exist "target\build-out" rmdir /s /q "target\build-out"
 SET "ICON_OPT="
 if exist "src\main\resources\icons\clown.ico" SET "ICON_OPT=--icon src\main\resources\icons\clown.ico"
 
-jpackage --type exe --name "Cringe Volume Player" --app-version %APP_VERSION% --vendor "CringeWare" --description "Audio player where you pay to change volume" --input target\app --main-jar cringe-player.jar --main-class com.cringe.player.Launcher --module-path "%JAVAFX_JMODS%" --add-modules javafx.controls,javafx.fxml,javafx.media,java.net.http,jdk.crypto.ec --java-options "-DPUBLIC_BACKEND_URL=%BACKEND_URL%" --java-options "-Dfile.encoding=UTF-8" --win-dir-chooser --win-shortcut --win-menu --win-menu-group "CringeWare" %ICON_OPT% --dest target\build-out
+jpackage --type exe --name "Cringe Volume Player" --app-version %APP_VERSION% --vendor "CringeWare" --description "Audio player where you pay to change volume" --input target\app --main-jar cringe-player.jar --main-class com.cringe.player.Launcher --module-path "%JAVAFX_JMODS%" --add-modules javafx.controls,javafx.fxml,javafx.media,java.net.http,jdk.crypto.ec --java-options "-DPUBLIC_BACKEND_URL=%BACKEND_URL%" --java-options "-Dfile.encoding=UTF-8" --win-upgrade-uuid "c7a3f1b2-5d4e-4f8a-9b6c-2e1d0a3f5b7c" --win-dir-chooser --win-shortcut --win-menu --win-menu-group "CringeWare" %ICON_OPT% --dest target\build-out
 
 if errorlevel 1 (
     echo.
