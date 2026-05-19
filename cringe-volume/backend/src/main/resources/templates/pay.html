@@ -76,7 +76,12 @@
 
         <!-- СБП -->
         <div class="qr-section">
-            <canvas id="qr" width="150" height="150"></canvas>
+            <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+               target="_blank" rel="noopener" style="display:inline-block">
+                <img id="qr" width="150" height="150" alt="QR"
+                     style="display:block;margin:0 auto 8px"
+                     src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ"/>
+            </a>
             <div class="sbp">
                 <span class="sbp-badge">СБП</span>
                 Отсканируйте для оплаты через СБП
@@ -203,49 +208,6 @@
         document.getElementById('expiredOverlay').classList.add('active');
     }
 
-    /* ---------- fake QR ---------- */
-    function drawFakeQR() {
-        const c = document.getElementById('qr');
-        const ctx = c.getContext('2d');
-        const s = c.width, n = 25, cs = s / n;
-
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, s, s);
-
-        function finderPattern(ox, oy) {
-            ctx.fillStyle = '#000';
-            for (let i = 0; i < 7; i++)
-                for (let j = 0; j < 7; j++)
-                    if (i===0||i===6||j===0||j===6||(i>=2&&i<=4&&j>=2&&j<=4))
-                        ctx.fillRect((ox+i)*cs,(oy+j)*cs,cs,cs);
-        }
-        finderPattern(0,0);
-        finderPattern(n-7,0);
-        finderPattern(0,n-7);
-
-        ctx.fillStyle = '#000';
-        for (let i = 8; i < n-8; i += 2) {
-            ctx.fillRect(i*cs, 6*cs, cs, cs);
-            ctx.fillRect(6*cs, i*cs, cs, cs);
-        }
-
-        let hash = 0;
-        for (let i = 0; i < TOKEN.length; i++)
-            hash = ((hash << 5) - hash) + TOKEN.charCodeAt(i) | 0;
-        let seed = Math.abs(hash) || 1;
-        function rng() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-
-        for (let i = 0; i < n; i++)
-            for (let j = 0; j < n; j++) {
-                if ((i<8&&j<8)||(i>=n-8&&j<8)||(i<8&&j>=n-8)) continue;
-                if (i===6||j===6) continue;
-                if (rng() > 0.52) {
-                    ctx.fillStyle = '#000';
-                    ctx.fillRect(i*cs, j*cs, cs-.4, cs-.4);
-                }
-            }
-    }
-
     /* ---------- форматирование номера карты ---------- */
     document.getElementById('cardNumber').addEventListener('input', function(e) {
         let v = e.target.value.replace(/\D/g,'').substring(0,16);
@@ -363,7 +325,6 @@
     } else {
         startTimer();
     }
-    drawFakeQR();
 </script>
 </body>
 </html>
