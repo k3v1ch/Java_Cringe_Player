@@ -39,7 +39,7 @@ public class AppUpdater {
     private static final String GITHUB_REPO  = "Java_Cringe_Player";
     // =============================
 
-    public static final String CURRENT_VERSION = "1.0.0";
+    public static final String CURRENT_VERSION = "1.0.1";
 
     private static final String API_URL = "https://api.github.com/repos/"
             + GITHUB_OWNER + "/" + GITHUB_REPO + "/releases/latest";

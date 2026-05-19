@@ -6,7 +6,7 @@ REM ============================================================
 
 REM === CONFIG ===
 SET "JAVAFX_JMODS=C:\Users\viplu\Desktop\javafx-jmods-17.0.19"
-SET "APP_VERSION=1.0.0"
+SET "APP_VERSION=1.0.1"
 SET "BACKEND_URL=https://pay.vernovpn.com"
 SET "MVN=C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2.2\plugins\maven\lib\maven3\bin\mvn.cmd"
 
