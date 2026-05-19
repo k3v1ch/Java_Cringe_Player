@@ -221,6 +221,17 @@ public class PaymentService {
     }
 
     private String hmacSha256(String secret, String data) {
+        // Явная валидация — даёт понятную ошибку вместо "Empty key" от JCA.
+        if (secret == null || secret.isEmpty()) {
+            log.error("HMAC: secret is null/empty. "
+                    + "Установите ROLLYPAY_SIGNING_SECRET в .env (минимум 1 символ).");
+            throw new RuntimeException(
+                    "HMAC-SHA256 error: webhook-secret пустой. "
+                    + "Установите ROLLYPAY_SIGNING_SECRET в .env");
+        }
+        if (data == null) {
+            throw new RuntimeException("HMAC-SHA256 error: data is null");
+        }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             SecretKeySpec key = new SecretKeySpec(
@@ -231,7 +242,27 @@ public class PaymentService {
             for (byte b : hash) hex.append(String.format("%02x", b));
             return hex.toString();
         } catch (Exception e) {
-            throw new RuntimeException("HMAC-SHA256 error", e);
+            // Включаем тип исключения и его message в текст,
+            // т.к. GlobalExceptionHandler покажет только наш message.
+            String detail = e.getClass().getSimpleName();
+            if (e.getMessage() != null) detail += ": " + e.getMessage();
+            log.error("HMAC-SHA256 error: {}", detail, e);
+            throw new RuntimeException("HMAC-SHA256 error: " + detail, e);
         }
+    }
+
+    /**
+     * Диагностика секрета при старте — длина без раскрытия значения.
+     */
+    @jakarta.annotation.PostConstruct
+    void logWebhookSecretInfo() {
+        if (webhookSecret == null || webhookSecret.isEmpty()) {
+            log.error("⚠ payment.webhook-secret ПУСТОЙ! "
+                    + "Платежи не будут работать. Проверьте ROLLYPAY_SIGNING_SECRET в .env");
+        } else {
+            log.info("payment.webhook-secret загружен ({} симв.)", webhookSecret.length());
+        }
+        log.info("payment.callback-internal-url = {}", callbackInternalUrl);
+        log.info("payment.pay-base-url = {}", payBaseUrl);
     }
 }

@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -17,6 +18,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * HTTP-клиент для аудио-API. URL читается из {@link ApiConfig}.
+ * Платёжные методы — см. {@link PaymentApiClient}.
+ */
 public class AudioApiClient {
 
     private final HttpClient client;
@@ -52,13 +57,7 @@ public class AudioApiClient {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
 
-        HttpResponse<String> response;
-        try {
-            response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        } catch (java.net.ConnectException ce) {
-            throw new IOException("Не удалось подключиться к серверу " + ApiConfig.BASE_URL
-                    + ". Проверьте, что бэкенд запущен и backend.url задан верно.", ce);
-        }
+        HttpResponse<String> response = send(request);
         checkResponse(response);
 
         JsonObject json = gson.fromJson(response.body(), JsonObject.class);
@@ -85,8 +84,7 @@ public class AudioApiClient {
                 .GET()
                 .build();
 
-        HttpResponse<String> response = client.send(request,
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = send(request);
         checkResponse(response);
         return gson.fromJson(response.body(), JsonObject.class);
     }
@@ -95,7 +93,7 @@ public class AudioApiClient {
 
     /**
      * GET /api/audio/tracks — список треков на сервере.
-     * Возвращает List строк (имена файлов).
+     * Возвращает List имён файлов.
      */
     public List<String> listTracks() throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
@@ -103,8 +101,7 @@ public class AudioApiClient {
                 .GET()
                 .build();
 
-        HttpResponse<String> response = client.send(request,
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = send(request);
         checkResponse(response);
 
         JsonArray arr = gson.fromJson(response.body(), JsonArray.class);
@@ -120,42 +117,12 @@ public class AudioApiClient {
      * Имя файла URL-кодируется (для кириллицы / пробелов).
      */
     public String getStreamUrl(String filename) {
-        // URLEncoder заменяет пробел на '+', что неверно в path-сегменте.
-        // Делаем правильное path-encoding: '+' → '%20'.
         String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8)
                 .replace("+", "%20");
         return ApiConfig.BASE_URL + "/tracks/" + encoded + "/stream";
     }
 
-    /* ========== Payments API ========== */
-
-    public JsonObject createPayment(int targetVolume) throws IOException, InterruptedException {
-        JsonObject body = new JsonObject();
-        body.addProperty("targetVolume", targetVolume);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(ApiConfig.PAYMENTS_URL + "/create"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                .build();
-
-        HttpResponse<String> response = client.send(request,
-                HttpResponse.BodyHandlers.ofString());
-        checkResponse(response);
-        return gson.fromJson(response.body(), JsonObject.class);
-    }
-
-    public JsonObject getPaymentStatus(String token) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(ApiConfig.PAYMENTS_URL + "/" + token + "/status"))
-                .GET()
-                .build();
-
-        HttpResponse<String> response = client.send(request,
-                HttpResponse.BodyHandlers.ofString());
-        checkResponse(response);
-        return gson.fromJson(response.body(), JsonObject.class);
-    }
+    /* ========== helpers ========== */
 
     private void post(String path, String jsonBody) throws IOException, InterruptedException {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -168,9 +135,19 @@ public class AudioApiClient {
             builder.POST(HttpRequest.BodyPublishers.noBody());
         }
 
-        HttpResponse<String> response = client.send(builder.build(),
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = send(builder.build());
         checkResponse(response);
+    }
+
+    private HttpResponse<String> send(HttpRequest req) throws IOException, InterruptedException {
+        try {
+            return client.send(req, HttpResponse.BodyHandlers.ofString());
+        } catch (ConnectException ce) {
+            throw new IOException("Не удалось подключиться к " + ApiConfig.getBackendUrl()
+                    + " (источник URL: " + ApiConfig.getSource() + "). "
+                    + "Передайте корректный адрес через -DPUBLIC_BACKEND_URL=https://...",
+                    ce);
+        }
     }
 
     private void checkResponse(HttpResponse<String> response) throws IOException {
@@ -187,7 +164,8 @@ public class AudioApiClient {
             if (msg == null || msg.isBlank()) {
                 msg = "пустой ответ (status " + response.statusCode() + ")";
             }
-            throw new IOException("Сервер вернул " + response.statusCode() + ": " + msg);
+            throw new IOException("Сервер " + ApiConfig.getBackendUrl()
+                    + " вернул " + response.statusCode() + ": " + msg);
         }
     }
 

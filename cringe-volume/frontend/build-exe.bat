@@ -81,7 +81,7 @@ jpackage ^
   --main-class com.cringe.player.Launcher ^
   --module-path "%JAVAFX_JMODS%" ^
   --add-modules javafx.controls,javafx.fxml,javafx.media ^
-  --java-options "-Dbackend.url=%BACKEND_URL%" ^
+  --java-options "-DPUBLIC_BACKEND_URL=%BACKEND_URL%" ^
   --java-options "-Dfile.encoding=UTF-8" ^
   %ICON_ARG% ^
   --dest target\installer

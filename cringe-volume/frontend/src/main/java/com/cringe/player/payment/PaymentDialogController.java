@@ -2,7 +2,7 @@ package com.cringe.player.payment;
 
 import com.cringe.player.CringePlayerApp;
 import com.cringe.player.api.ApiConfig;
-import com.cringe.player.api.AudioApiClient;
+import com.cringe.player.api.PaymentApiClient;
 import com.google.gson.JsonObject;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -20,7 +20,7 @@ public class PaymentDialogController {
     @FXML private Button openBrowserButton;
     @FXML private Button cancelButton;
 
-    private final AudioApiClient apiClient = new AudioApiClient();
+    private final PaymentApiClient apiClient = new PaymentApiClient();
 
     private String paymentToken;
     private int targetVolume;
@@ -59,8 +59,12 @@ public class PaymentDialogController {
                 CringePlayerApp.hostServices().showDocument(payUrl);
                 startPolling();
             } catch (Exception e) {
+                e.printStackTrace();
+                String msg = e.getMessage();
+                if (msg == null || msg.isBlank()) msg = e.getClass().getSimpleName();
+                final String finalMsg = msg;
                 Platform.runLater(() -> {
-                    statusLabel.setText("Ошибка: " + e.getMessage());
+                    statusLabel.setText("Ошибка: " + finalMsg);
                     spinner.setVisible(false);
                 });
             }

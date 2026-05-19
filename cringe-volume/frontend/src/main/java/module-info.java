@@ -6,13 +6,11 @@ module com.cringe.player {
     requires com.google.gson;
 
     opens com.cringe.player.ui to javafx.fxml;
-    opens com.cringe.player.cringe to javafx.fxml;
     opens com.cringe.player.payment to javafx.fxml;
 
     exports com.cringe.player;
     exports com.cringe.player.api;
     exports com.cringe.player.player;
-    exports com.cringe.player.cringe;
     exports com.cringe.player.payment;
     exports com.cringe.player.ui;
 }

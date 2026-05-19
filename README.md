@@ -60,10 +60,20 @@ cd cringe-volume/frontend
 mvn javafx:run
 ```
 
-Или с указанием URL бэкенда:
+Или с указанием URL бэкенда (приоритеты: system property > env var > localhost):
 
 ```bash
-mvn javafx:run -Dbackend.url=https://pay.vernovpn.com
+# system property (1-й приоритет)
+mvn javafx:run -DPUBLIC_BACKEND_URL=https://pay.vernovpn.com
+
+# environment variable (2-й приоритет)
+export PUBLIC_BACKEND_URL=https://pay.vernovpn.com
+mvn javafx:run
+```
+
+В консоли при старте увидите:
+```
+[ApiConfig] Backend URL: https://pay.vernovpn.com  (source: -DPUBLIC_BACKEND_URL)
 ```
 
 ## Конфигурация (.env)
@@ -248,7 +258,7 @@ jpackage \
   --main-class com.cringe.player.Launcher \
   --module-path /path/to/javafx-jmods-17.0.11 \
   --add-modules javafx.controls,javafx.fxml,javafx.media \
-  --java-options "-Dbackend.url=https://pay.vernovpn.com" \
+  --java-options "-DPUBLIC_BACKEND_URL=https://pay.vernovpn.com" \
   --icon src/main/resources/icons/clown.ico \
   --dest target/installer
 ```
