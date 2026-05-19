@@ -149,18 +149,25 @@ public class MainController {
 
     /**
      * Превращает любое исключение в читаемое сообщение.
-     * e.getMessage() часто null (IOException без message) — fallback на класс + cause.
+     * Для {@link com.cringe.player.api.ApiException} использует формат
+     * "Ошибка CODE_001: текст". Для остальных — recurse по cause-цепочке.
      */
     private String describeError(Throwable e) {
+        if (e instanceof com.cringe.player.api.ApiException ae) {
+            return ae.toUserMessage();
+        }
         StringBuilder sb = new StringBuilder();
         Throwable cur = e;
-        while (cur != null) {
+        int depth = 0;
+        while (cur != null && depth < 5) {
             String m = cur.getMessage();
             if (m == null || m.isBlank()) m = cur.getClass().getSimpleName();
             if (sb.length() > 0) sb.append(" → ");
             sb.append(m);
-            cur = cur.getCause();
-            if (cur == e) break;  // защита от циклов
+            Throwable next = cur.getCause();
+            if (next == cur) break;
+            cur = next;
+            depth++;
         }
         return sb.toString();
     }

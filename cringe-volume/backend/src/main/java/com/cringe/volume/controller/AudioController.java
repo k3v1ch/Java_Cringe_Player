@@ -1,8 +1,12 @@
 package com.cringe.volume.controller;
 
 import com.cringe.volume.dto.*;
+import com.cringe.volume.exception.AppException;
+import com.cringe.volume.exception.ErrorCode;
 import com.cringe.volume.service.AudioService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.http.*;
@@ -16,6 +20,8 @@ import java.util.List;
 @RequestMapping("/api/audio")
 public class AudioController {
 
+    private static final Logger log = LoggerFactory.getLogger(AudioController.class);
+
     private final AudioService audioService;
 
     public AudioController(AudioService audioService) {
@@ -23,8 +29,9 @@ public class AudioController {
     }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<UploadResponse> upload(@RequestParam("file") MultipartFile file)
-            throws IOException {
+    public ResponseEntity<UploadResponse> upload(@RequestParam("file") MultipartFile file) {
+        log.info("AUDIO: upload получен, size={}b, contentType={}, name={}",
+                file.getSize(), file.getContentType(), file.getOriginalFilename());
         String fileName = audioService.upload(file);
         return ResponseEntity.ok(new UploadResponse(fileName));
     }
@@ -55,29 +62,37 @@ public class AudioController {
     /* ========== Треки ========== */
 
     @GetMapping("/tracks")
-    public ResponseEntity<List<TrackInfo>> listTracks() throws IOException {
-        return ResponseEntity.ok(audioService.listTracks());
+    public ResponseEntity<List<TrackInfo>> listTracks() {
+        List<TrackInfo> tracks = audioService.listTracks();
+        log.debug("AUDIO: GET /tracks → {} треков", tracks.size());
+        return ResponseEntity.ok(tracks);
     }
 
     /**
-     * Стрим аудио с поддержкой HTTP Range.
-     * Использует ResourceRegion — Spring сам сдвинется к нужному смещению
-     * и отдаст ровно запрошенный кусок (без чтения всего файла в память).
+     * Стрим аудио с поддержкой HTTP Range через ResourceRegion.
      */
     @GetMapping("/tracks/{filename}/stream")
     public ResponseEntity<ResourceRegion> streamTrack(
             @PathVariable String filename,
-            @RequestHeader HttpHeaders headers) throws IOException {
+            @RequestHeader HttpHeaders headers) {
 
-        Resource resource = audioService.getTrackResource(filename);
-        long fileSize = audioService.getTrackSize(filename);
+        Resource resource;
+        long fileSize;
+        try {
+            resource = audioService.getTrackResource(filename);
+            fileSize = audioService.getTrackSize(filename);
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("{}: ошибка stream для {}",
+                    ErrorCode.AUDIO_STREAM_FAILED.getCode(), filename, e);
+            throw new AppException(ErrorCode.AUDIO_STREAM_FAILED, filename, e);
+        }
+
         MediaType contentType = resolveContentType(filename);
-
         List<HttpRange> ranges = headers.getRange();
 
         if (ranges.isEmpty()) {
-            // Без Range — отдаём весь файл, но всё равно как ResourceRegion,
-            // чтобы Spring корректно прислал Accept-Ranges и поддержал seek.
             ResourceRegion full = new ResourceRegion(resource, 0, fileSize);
             return ResponseEntity.ok()
                     .contentType(contentType)
@@ -89,7 +104,6 @@ public class AudioController {
         HttpRange range = ranges.get(0);
         long start = range.getRangeStart(fileSize);
         long end = range.getRangeEnd(fileSize);
-        // ограничиваем размер chunk-а, чтобы не отдавать гигантский кусок одним ответом
         long rangeLength = Math.min(end - start + 1, 1024L * 1024L);
 
         ResourceRegion region = new ResourceRegion(resource, start, rangeLength);

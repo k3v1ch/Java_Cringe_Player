@@ -61,27 +61,16 @@ public class PaymentApiClient {
         try {
             return client.send(req, HttpResponse.BodyHandlers.ofString());
         } catch (ConnectException ce) {
-            throw new IOException("Не удалось подключиться к " + ApiConfig.getBackendUrl()
-                    + " (источник URL: " + ApiConfig.getSource() + "). "
-                    + "Проверьте PUBLIC_BACKEND_URL.", ce);
+            throw new ApiException(
+                    "SRV_001",
+                    "Сервер недоступен: " + ApiConfig.getBackendUrl(),
+                    "источник URL: " + ApiConfig.getSource(),
+                    0, ce);
         }
     }
 
-    private void checkResponse(HttpResponse<String> response) throws IOException {
-        if (response.statusCode() >= 400) {
-            String msg;
-            try {
-                JsonObject err = gson.fromJson(response.body(), JsonObject.class);
-                msg = err != null && err.has("message")
-                        ? err.get("message").getAsString()
-                        : response.body();
-            } catch (Exception e) {
-                msg = response.body();
-            }
-            if (msg == null || msg.isBlank()) {
-                msg = "пустой ответ (status " + response.statusCode() + ")";
-            }
-            throw new IOException("Сервер вернул " + response.statusCode() + ": " + msg);
-        }
+    private void checkResponse(HttpResponse<String> response) {
+        if (response.statusCode() < 400) return;
+        ApiErrorParser.throwAsApiException(response, ApiConfig.getBackendUrl());
     }
 }

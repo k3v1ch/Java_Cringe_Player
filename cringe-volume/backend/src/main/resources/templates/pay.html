@@ -105,10 +105,15 @@
             <input type="text" placeholder="IVAN IVANOV" autocomplete="off"/>
         </div>
 
-        <!-- Email для чека -->
+        <!-- Email для чека (обязательно) -->
         <div class="field">
-            <label>Email для чека (необязательно)</label>
-            <input type="email" id="emailInput" placeholder="example@mail.com" autocomplete="email"/>
+            <label>Email для чека <span style="color:#ef4444">*</span></label>
+            <input type="email" id="emailInput" placeholder="example@mail.com"
+                   required autocomplete="email"
+                   oninput="validateEmailInput()"/>
+            <div id="emailError" style="display:none;color:#ef4444;font-size:12px;margin-top:4px">
+                Введите корректный email
+            </div>
         </div>
 
         <!-- Промокод -->
@@ -136,7 +141,7 @@
             </div>
         </div>
 
-        <button class="pay-btn" id="payBtn" onclick="pay()">
+        <button class="pay-btn" id="payBtn" onclick="pay()" disabled>
             Оплатить <span th:text="${totalAmount + ' ₽'}">84 ₽</span>
         </button>
     </div>
@@ -255,8 +260,29 @@
         err.style.display = 'block';
     }
 
+    /* ---------- email validation ---------- */
+    const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+
+    function validateEmailInput() {
+        const input = document.getElementById('emailInput');
+        const error = document.getElementById('emailError');
+        const btn = document.getElementById('payBtn');
+        const val = input.value.trim();
+
+        const valid = val.length > 0 && EMAIL_RE.test(val);
+        error.style.display = (val.length > 0 && !valid) ? 'block' : 'none';
+        btn.disabled = !valid;
+        return valid;
+    }
+
     /* ---------- оплата ---------- */
     async function pay() {
+        const email = document.getElementById('emailInput').value.trim();
+        if (!validateEmailInput()) {
+            alert('Введите корректный email для получения чека');
+            return;
+        }
+
         const btn = document.getElementById('payBtn');
         btn.disabled = true;
 
@@ -265,21 +291,19 @@
 
         const start = Date.now();
         try {
-            const email = document.getElementById('emailInput').value.trim();
             const resp = await fetch('/api/payments/' + TOKEN + '/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email || null })
+                body: JSON.stringify({ email: email })
             });
 
             if (!resp.ok) {
-                const errBody = await resp.text();
-                throw new Error('HTTP ' + resp.status + ': ' + errBody);
+                const err = await parseError(resp);
+                throw new Error('[' + err.code + '] ' + err.message);
             }
 
-            // дополнительно проверим статус через GET — на случай если self-webhook
-            // пометил paid, но клиент ещё не получил ответа /process
-            const okStatus = await pollUntilPaid(TOKEN, 6);  // 6 попыток × 500ms = 3 сек
+            // дополнительно проверим статус через GET
+            const okStatus = await pollUntilPaid(TOKEN, 6);
 
             const elapsed = Date.now() - start;
             await new Promise(r => setTimeout(r, Math.max(0, 2500 - elapsed)));
@@ -288,14 +312,28 @@
             if (okStatus) {
                 document.getElementById('successOverlay').classList.add('active');
             } else {
-                throw new Error('Платёж не подтверждён (статус не paid)');
+                throw new Error('[PAY_005] Платёж не подтверждён (статус не paid)');
             }
-        } catch(e) {
+        } catch (e) {
             console.error('pay error:', e);
             document.getElementById('processingOverlay').classList.remove('active');
             document.getElementById('mainContent').style.display = 'block';
             btn.disabled = false;
-            alert('Ошибка обработки платежа: ' + e.message);
+            alert('Ошибка обработки платежа\n\n' + e.message);
+        }
+    }
+
+    /** Парсит {error,code,message,details} из ответа бэкенда. */
+    async function parseError(resp) {
+        try {
+            const data = await resp.json();
+            return {
+                code: data.code || ('HTTP_' + resp.status),
+                message: data.message || resp.statusText,
+                details: data.details || null
+            };
+        } catch (e) {
+            return { code: 'HTTP_' + resp.status, message: resp.statusText, details: null };
         }
     }
 
@@ -308,7 +346,9 @@
                     if (data.status === 'paid') return true;
                     if (data.status === 'expired') return false;
                 }
-            } catch (e) { /* retry */ }
+            } catch (e) {
+                console.warn('poll attempt failed:', e);
+            }
             await new Promise(res => setTimeout(res, 500));
         }
         return false;

@@ -60,11 +60,15 @@ public class PaymentDialogController {
                 startPolling();
             } catch (Exception e) {
                 e.printStackTrace();
-                String msg = e.getMessage();
-                if (msg == null || msg.isBlank()) msg = e.getClass().getSimpleName();
-                final String finalMsg = msg;
+                final String msg;
+                if (e instanceof com.cringe.player.api.ApiException ae) {
+                    msg = ae.toUserMessage();
+                } else {
+                    String m = e.getMessage();
+                    msg = (m == null || m.isBlank()) ? e.getClass().getSimpleName() : m;
+                }
                 Platform.runLater(() -> {
-                    statusLabel.setText("Ошибка: " + finalMsg);
+                    statusLabel.setText(msg);
                     spinner.setVisible(false);
                 });
             }

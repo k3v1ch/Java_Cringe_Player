@@ -1,6 +1,7 @@
 package com.cringe.volume.mail;
 
 import com.cringe.volume.config.MailConfig;
+import com.cringe.volume.exception.ErrorCode;
 import com.cringe.volume.payment.Payment;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
@@ -30,15 +31,19 @@ public class ReceiptMailService {
 
     /**
      * Отправляет шуточный «чек» на указанный email.
-     * Сбой SMTP — только лог, на статус платежа НЕ влияет.
+     * Сбой SMTP — лог + return; на статус платежа НЕ влияет (платёж уже paid).
      */
     @Async
     public void sendReceipt(String recipientEmail, Payment payment) {
         if (recipientEmail == null || recipientEmail.isBlank()) {
+            log.warn("{}: email пустой для платежа {} — чек НЕ отправлен",
+                    ErrorCode.EMAIL_REQUIRED.getCode(), payment.getToken());
             return;
         }
         if (!mailConfig.isConfigured()) {
-            log.warn("SMTP не настроен — чек не отправлен для {}", payment.getToken());
+            log.warn("{}: SMTP не настроен — чек на {} НЕ отправлен (token={})",
+                    ErrorCode.EMAIL_SEND_FAILED.getCode(),
+                    recipientEmail, payment.getToken());
             return;
         }
 
@@ -53,9 +58,13 @@ public class ReceiptMailService {
             helper.setText(buildReceiptBody(payment), true);
 
             mailSender.send(msg);
-            log.info("Чек отправлен на {} для платежа {}", recipientEmail, payment.getToken());
+            log.info("EMAIL: чек отправлен на {} (token={})",
+                    recipientEmail, payment.getToken());
         } catch (Exception e) {
-            log.error("Не удалось отправить чек на {}: {}", recipientEmail, e.getMessage());
+            // Не пробрасываем — статус платежа уже PAID, email опционален в плане жизненного цикла
+            log.error("{}: не удалось отправить чек на {} (token={})",
+                    ErrorCode.EMAIL_SEND_FAILED.getCode(),
+                    recipientEmail, payment.getToken(), e);
         }
     }
 

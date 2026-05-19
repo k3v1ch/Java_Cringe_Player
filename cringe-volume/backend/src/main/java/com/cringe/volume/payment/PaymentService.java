@@ -1,8 +1,11 @@
 package com.cringe.volume.payment;
 
+import com.cringe.volume.exception.AppException;
+import com.cringe.volume.exception.ErrorCode;
 import com.cringe.volume.mail.ReceiptMailService;
 import com.cringe.volume.service.AudioService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,10 +47,6 @@ public class PaymentService {
     @Value("${server.port:8080}")
     private int serverPort;
 
-    /**
-     * URL для self-вебхука внутри инфраструктуры (НЕ через публичный домен).
-     * В Docker — это localhost внутри контейнера. По умолчанию вычисляем сами.
-     */
     @Value("${payment.callback-internal-url:}")
     private String callbackInternalUrl;
 
@@ -61,28 +60,53 @@ public class PaymentService {
         this.receiptMailService = receiptMailService;
     }
 
+    @PostConstruct
+    void logConfig() {
+        if (webhookSecret == null || webhookSecret.isEmpty()) {
+            log.error("⚠ {}: webhook-secret ПУСТОЙ. Установите ROLLYPAY_SIGNING_SECRET в .env",
+                    ErrorCode.PAYMENT_SECRET_MISSING.getCode());
+        } else {
+            log.info("PAY: webhook-secret загружен ({} симв.)", webhookSecret.length());
+        }
+        log.info("PAY: mode = {}", paymentMode);
+        log.info("PAY: callback-internal-url = {}", resolveSelfWebhookUrl());
+        log.info("PAY: pay-base-url = {}", payBaseUrl);
+    }
+
     /* ---------- создание ---------- */
 
     public Payment createPayment(int targetVolume) {
-        Payment p = new Payment();
-        p.setToken(UUID.randomUUID().toString());
-        p.setTargetVolume(targetVolume);
-        p.setBasePrice(pricing.calculateBasePrice(targetVolume));
-        p.setCommission(pricing.getCommission());
-        p.setTotalAmount(p.getBasePrice() + p.getCommission());
-        p.setDescription(pricing.generateDescription(targetVolume));
-        p.setStatus(PaymentStatus.PENDING);
-        p.setCreatedAt(Instant.now());
-        p.setExpiresAt(Instant.now().plusSeconds(300));
-        store.save(p);
-        return p;
+        if (targetVolume < 0 || targetVolume > 100) {
+            throw new AppException(ErrorCode.VOLUME_INVALID,
+                    "получено: " + targetVolume);
+        }
+        try {
+            Payment p = new Payment();
+            p.setToken(UUID.randomUUID().toString());
+            p.setTargetVolume(targetVolume);
+            p.setBasePrice(pricing.calculateBasePrice(targetVolume));
+            p.setCommission(pricing.getCommission());
+            p.setTotalAmount(p.getBasePrice() + p.getCommission());
+            p.setDescription(pricing.generateDescription(targetVolume));
+            p.setStatus(PaymentStatus.PENDING);
+            p.setCreatedAt(Instant.now());
+            p.setExpiresAt(Instant.now().plusSeconds(300));
+            store.save(p);
+            return p;
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("{}: ошибка создания платежа",
+                    ErrorCode.PAYMENT_CREATION_FAILED.getCode(), e);
+            throw new AppException(ErrorCode.PAYMENT_CREATION_FAILED, e.getMessage(), e);
+        }
     }
 
     /* ---------- получение ---------- */
 
     public Payment getPayment(String token) {
         Payment p = store.findByToken(token)
-                .orElseThrow(() -> new IllegalArgumentException("Платёж не найден: " + token));
+                .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND, token));
         refreshExpiry(p);
         return p;
     }
@@ -93,23 +117,23 @@ public class PaymentService {
         Payment p = getPayment(token);
 
         if (p.getStatus() == PaymentStatus.EXPIRED) {
-            throw new IllegalStateException("Время оплаты истекло");
+            throw new AppException(ErrorCode.PAYMENT_EXPIRED, token);
         }
         if (p.getStatus() == PaymentStatus.PAID) {
-            throw new IllegalStateException("Платёж уже обработан");
+            throw new AppException(ErrorCode.PAYMENT_ALREADY_PAID, token);
         }
-        // PROCESSING — позволяем повторный вызов (повторим self-webhook)
         if (p.getStatus() != PaymentStatus.PENDING && p.getStatus() != PaymentStatus.PROCESSING) {
-            throw new IllegalStateException("Платёж в недопустимом статусе: " + p.getStatus());
+            throw new AppException(ErrorCode.PAYMENT_INVALID_STATE,
+                    "status=" + p.getStatus());
         }
 
         if (email != null && !email.isBlank()) {
             p.setEmail(email);
         }
         p.setStatus(PaymentStatus.PROCESSING);
+        log.info("PAY: платёж {} → PROCESSING", token);
 
         if ("mock".equalsIgnoreCase(paymentMode)) {
-            // отправляем self-webhook СИНХРОННО, чтобы клиент сразу мог увидеть paid
             sendSelfWebhook(p);
         }
     }
@@ -119,43 +143,46 @@ public class PaymentService {
     public void handleWebhook(String signature, String timestamp, String rawBody) {
         String expected = hmacSha256(webhookSecret, timestamp + "." + rawBody);
         if (!expected.equals(signature)) {
-            log.warn("Webhook: signature mismatch. expected={}, got={}", expected, signature);
-            throw new SecurityException("Неверная подпись вебхука");
+            log.warn("{}: ожидалось {}, получено {}",
+                    ErrorCode.PAYMENT_SIGNATURE_INVALID.getCode(),
+                    expected, signature);
+            throw new AppException(ErrorCode.PAYMENT_SIGNATURE_INVALID,
+                    "expected=" + expected + ", got=" + signature);
         }
 
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = mapper.readValue(rawBody, Map.class);
 
-            // поддерживаем оба варианта: event_type (новый) и event (старый)
-            String eventType = (String) payload.getOrDefault("event_type", payload.get("event"));
+            String eventType = (String) payload.getOrDefault("event_type",
+                    payload.get("event"));
             String token = (String) payload.get("token");
 
             if (!"payment.paid".equals(eventType) && !"payment.completed".equals(eventType)) {
-                log.info("Webhook: skipping event_type={}", eventType);
+                log.info("PAY: webhook skipped event_type={}", eventType);
                 return;
             }
 
             Payment p = store.findByToken(token)
-                    .orElseThrow(() -> new IllegalArgumentException("Платёж не найден"));
+                    .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND, token));
 
             if (p.getStatus() == PaymentStatus.PAID) {
-                log.info("Webhook: платёж {} уже paid, пропускаем", token);
+                log.info("PAY: webhook {} уже paid, idempotent skip", token);
                 return;
             }
 
             p.setStatus(PaymentStatus.PAID);
             audioService.setVolume(p.getTargetVolume());
-            log.info("Webhook: платёж {} помечен paid, громкость → {}",
-                    token, p.getTargetVolume());
+            log.info("PAY: webhook {} → PAID, громкость → {}", token, p.getTargetVolume());
 
-            // чек — сбой SMTP не влияет на статус (метод @Async внутри)
+            // email гарантирован (валидация в контроллере)
             receiptMailService.sendReceipt(p.getEmail(), p);
-        } catch (SecurityException se) {
-            throw se;
+        } catch (AppException ae) {
+            throw ae;
         } catch (Exception e) {
-            log.error("Webhook: ошибка обработки", e);
-            throw new RuntimeException("Ошибка обработки вебхука", e);
+            log.error("{}: ошибка обработки webhook",
+                    ErrorCode.PAYMENT_WEBHOOK_FAILED.getCode(), e);
+            throw new AppException(ErrorCode.PAYMENT_WEBHOOK_FAILED, e.getMessage(), e);
         }
     }
 
@@ -180,9 +207,9 @@ public class PaymentService {
     }
 
     private void sendSelfWebhook(Payment p) {
+        String selfUrl = resolveSelfWebhookUrl();
         try {
             String timestamp = String.valueOf(Instant.now().getEpochSecond());
-            // LinkedHashMap чтобы порядок полей был детерминирован при сериализации
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("event_type", "payment.paid");
             payload.put("token", p.getToken());
@@ -193,8 +220,7 @@ public class PaymentService {
             String body = mapper.writeValueAsString(payload);
             String sig = hmacSha256(webhookSecret, timestamp + "." + body);
 
-            String selfUrl = resolveSelfWebhookUrl();
-            log.info("Self-webhook → {} (token={})", selfUrl, p.getToken());
+            log.info("PAY: self-webhook → {} (token={})", selfUrl, p.getToken());
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(selfUrl))
@@ -208,29 +234,30 @@ public class PaymentService {
                     HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 400) {
-                log.error("Self-webhook вернул {}: {}",
-                        response.statusCode(), response.body());
-                throw new RuntimeException("Webhook вернул "
-                        + response.statusCode() + ": " + response.body());
+                log.error("{}: self-webhook {} вернул {}: {}",
+                        ErrorCode.PAYMENT_WEBHOOK_FAILED.getCode(),
+                        selfUrl, response.statusCode(), response.body());
+                throw new AppException(ErrorCode.PAYMENT_WEBHOOK_FAILED,
+                        "self-webhook " + response.statusCode() + ": " + response.body());
             }
-        } catch (RuntimeException re) {
-            throw re;
+        } catch (AppException ae) {
+            throw ae;
         } catch (Exception e) {
-            throw new RuntimeException("Ошибка отправки self-webhook: " + e.getMessage(), e);
+            log.error("{}: не удалось отправить self-webhook на {}",
+                    ErrorCode.PAYMENT_WEBHOOK_FAILED.getCode(), selfUrl, e);
+            throw new AppException(ErrorCode.PAYMENT_WEBHOOK_FAILED,
+                    e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
     }
 
     private String hmacSha256(String secret, String data) {
-        // Явная валидация — даёт понятную ошибку вместо "Empty key" от JCA.
         if (secret == null || secret.isEmpty()) {
-            log.error("HMAC: secret is null/empty. "
-                    + "Установите ROLLYPAY_SIGNING_SECRET в .env (минимум 1 символ).");
-            throw new RuntimeException(
-                    "HMAC-SHA256 error: webhook-secret пустой. "
-                    + "Установите ROLLYPAY_SIGNING_SECRET в .env");
+            log.error("{}: webhook-secret пустой/null",
+                    ErrorCode.PAYMENT_SECRET_MISSING.getCode());
+            throw new AppException(ErrorCode.PAYMENT_SECRET_MISSING);
         }
         if (data == null) {
-            throw new RuntimeException("HMAC-SHA256 error: data is null");
+            throw new AppException(ErrorCode.PAYMENT_WEBHOOK_FAILED, "data is null");
         }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -242,27 +269,10 @@ public class PaymentService {
             for (byte b : hash) hex.append(String.format("%02x", b));
             return hex.toString();
         } catch (Exception e) {
-            // Включаем тип исключения и его message в текст,
-            // т.к. GlobalExceptionHandler покажет только наш message.
-            String detail = e.getClass().getSimpleName();
-            if (e.getMessage() != null) detail += ": " + e.getMessage();
-            log.error("HMAC-SHA256 error: {}", detail, e);
-            throw new RuntimeException("HMAC-SHA256 error: " + detail, e);
+            log.error("{}: HMAC compute error",
+                    ErrorCode.PAYMENT_WEBHOOK_FAILED.getCode(), e);
+            throw new AppException(ErrorCode.PAYMENT_WEBHOOK_FAILED,
+                    "HMAC " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Диагностика секрета при старте — длина без раскрытия значения.
-     */
-    @jakarta.annotation.PostConstruct
-    void logWebhookSecretInfo() {
-        if (webhookSecret == null || webhookSecret.isEmpty()) {
-            log.error("⚠ payment.webhook-secret ПУСТОЙ! "
-                    + "Платежи не будут работать. Проверьте ROLLYPAY_SIGNING_SECRET в .env");
-        } else {
-            log.info("payment.webhook-secret загружен ({} симв.)", webhookSecret.length());
-        }
-        log.info("payment.callback-internal-url = {}", callbackInternalUrl);
-        log.info("payment.pay-base-url = {}", payBaseUrl);
     }
 }
