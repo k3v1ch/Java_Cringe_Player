@@ -27,3 +27,4 @@ docker-compose.override.yml
 # === Music (runtime data) ===
 backend/music/*.mp3
 backend/music/*.wav
+!backend/music/.gitkeep
