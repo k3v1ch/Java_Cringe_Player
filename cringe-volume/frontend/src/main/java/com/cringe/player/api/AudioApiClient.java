@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -23,27 +24,41 @@ public class AudioApiClient {
 
     public AudioApiClient() {
         this.client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(Duration.ofSeconds(15))
                 .build();
     }
 
     public String uploadFile(Path filePath) throws IOException, InterruptedException {
+        if (filePath == null) {
+            throw new IOException("Файл не выбран");
+        }
+        if (!java.nio.file.Files.exists(filePath)) {
+            throw new IOException("Файл не существует: " + filePath);
+        }
+
         String boundary = UUID.randomUUID().toString();
         byte[] fileBytes = java.nio.file.Files.readAllBytes(filePath);
         String fileName = filePath.getFileName().toString();
+        String lowerName = fileName.toLowerCase();
 
-        String mimeType = fileName.endsWith(".wav") ? "audio/wav" : "audio/mpeg";
+        String mimeType = lowerName.endsWith(".wav") ? "audio/wav" : "audio/mpeg";
 
         byte[] body = buildMultipartBody(boundary, fileName, mimeType, fileBytes);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(ApiConfig.BASE_URL + "/upload"))
+                .timeout(Duration.ofMinutes(2))
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
 
-        HttpResponse<String> response = client.send(request,
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (java.net.ConnectException ce) {
+            throw new IOException("Не удалось подключиться к серверу " + ApiConfig.BASE_URL
+                    + ". Проверьте, что бэкенд запущен и backend.url задан верно.", ce);
+        }
         checkResponse(response);
 
         JsonObject json = gson.fromJson(response.body(), JsonObject.class);
@@ -102,9 +117,14 @@ public class AudioApiClient {
 
     /**
      * URL для стриминга трека — используется для MediaPlayer.
+     * Имя файла URL-кодируется (для кириллицы / пробелов).
      */
     public String getStreamUrl(String filename) {
-        return ApiConfig.BASE_URL + "/tracks/" + filename + "/stream";
+        // URLEncoder заменяет пробел на '+', что неверно в path-сегменте.
+        // Делаем правильное path-encoding: '+' → '%20'.
+        String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return ApiConfig.BASE_URL + "/tracks/" + encoded + "/stream";
     }
 
     /* ========== Payments API ========== */
@@ -158,11 +178,16 @@ public class AudioApiClient {
             String msg;
             try {
                 JsonObject err = gson.fromJson(response.body(), JsonObject.class);
-                msg = err.has("message") ? err.get("message").getAsString() : response.body();
+                msg = err != null && err.has("message")
+                        ? err.get("message").getAsString()
+                        : response.body();
             } catch (Exception e) {
                 msg = response.body();
             }
-            throw new IOException("Ошибка сервера (" + response.statusCode() + "): " + msg);
+            if (msg == null || msg.isBlank()) {
+                msg = "пустой ответ (status " + response.statusCode() + ")";
+            }
+            throw new IOException("Сервер вернул " + response.statusCode() + ": " + msg);
         }
     }
 

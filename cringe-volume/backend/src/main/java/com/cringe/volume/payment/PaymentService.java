@@ -3,6 +3,8 @@ package com.cringe.volume.payment;
 import com.cringe.volume.mail.ReceiptMailService;
 import com.cringe.volume.service.AudioService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -14,11 +16,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class PaymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
 
     private final PaymentStore store;
     private final PaymentPricingService pricing;
@@ -38,6 +43,13 @@ public class PaymentService {
 
     @Value("${server.port:8080}")
     private int serverPort;
+
+    /**
+     * URL для self-вебхука внутри инфраструктуры (НЕ через публичный домен).
+     * В Docker — это localhost внутри контейнера. По умолчанию вычисляем сами.
+     */
+    @Value("${payment.callback-internal-url:}")
+    private String callbackInternalUrl;
 
     public PaymentService(PaymentStore store,
                           PaymentPricingService pricing,
@@ -83,14 +95,21 @@ public class PaymentService {
         if (p.getStatus() == PaymentStatus.EXPIRED) {
             throw new IllegalStateException("Время оплаты истекло");
         }
-        if (p.getStatus() != PaymentStatus.PENDING) {
+        if (p.getStatus() == PaymentStatus.PAID) {
             throw new IllegalStateException("Платёж уже обработан");
         }
+        // PROCESSING — позволяем повторный вызов (повторим self-webhook)
+        if (p.getStatus() != PaymentStatus.PENDING && p.getStatus() != PaymentStatus.PROCESSING) {
+            throw new IllegalStateException("Платёж в недопустимом статусе: " + p.getStatus());
+        }
 
-        p.setEmail(email);
+        if (email != null && !email.isBlank()) {
+            p.setEmail(email);
+        }
         p.setStatus(PaymentStatus.PROCESSING);
 
         if ("mock".equalsIgnoreCase(paymentMode)) {
+            // отправляем self-webhook СИНХРОННО, чтобы клиент сразу мог увидеть paid
             sendSelfWebhook(p);
         }
     }
@@ -100,27 +119,42 @@ public class PaymentService {
     public void handleWebhook(String signature, String timestamp, String rawBody) {
         String expected = hmacSha256(webhookSecret, timestamp + "." + rawBody);
         if (!expected.equals(signature)) {
+            log.warn("Webhook: signature mismatch. expected={}, got={}", expected, signature);
             throw new SecurityException("Неверная подпись вебхука");
         }
 
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = mapper.readValue(rawBody, Map.class);
-            String event = (String) payload.get("event");
+
+            // поддерживаем оба варианта: event_type (новый) и event (старый)
+            String eventType = (String) payload.getOrDefault("event_type", payload.get("event"));
             String token = (String) payload.get("token");
 
-            if (!"payment.completed".equals(event)) return;
+            if (!"payment.paid".equals(eventType) && !"payment.completed".equals(eventType)) {
+                log.info("Webhook: skipping event_type={}", eventType);
+                return;
+            }
 
             Payment p = store.findByToken(token)
                     .orElseThrow(() -> new IllegalArgumentException("Платёж не найден"));
+
+            if (p.getStatus() == PaymentStatus.PAID) {
+                log.info("Webhook: платёж {} уже paid, пропускаем", token);
+                return;
+            }
+
             p.setStatus(PaymentStatus.PAID);
             audioService.setVolume(p.getTargetVolume());
+            log.info("Webhook: платёж {} помечен paid, громкость → {}",
+                    token, p.getTargetVolume());
 
-            // чек — сбой SMTP не влияет на статус
+            // чек — сбой SMTP не влияет на статус (метод @Async внутри)
             receiptMailService.sendReceipt(p.getEmail(), p);
         } catch (SecurityException se) {
             throw se;
         } catch (Exception e) {
+            log.error("Webhook: ошибка обработки", e);
             throw new RuntimeException("Ошибка обработки вебхука", e);
         }
     }
@@ -138,19 +172,29 @@ public class PaymentService {
         }
     }
 
+    private String resolveSelfWebhookUrl() {
+        if (callbackInternalUrl != null && !callbackInternalUrl.isBlank()) {
+            return callbackInternalUrl;
+        }
+        return "http://localhost:" + serverPort + "/api/payments/webhook";
+    }
+
     private void sendSelfWebhook(Payment p) {
         try {
             String timestamp = String.valueOf(Instant.now().getEpochSecond());
-            Map<String, Object> payload = Map.of(
-                    "event", "payment.completed",
-                    "token", p.getToken(),
-                    "amount", p.getTotalAmount(),
-                    "targetVolume", p.getTargetVolume()
-            );
+            // LinkedHashMap чтобы порядок полей был детерминирован при сериализации
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("event_type", "payment.paid");
+            payload.put("token", p.getToken());
+            payload.put("amount", p.getTotalAmount());
+            payload.put("targetVolume", p.getTargetVolume());
+            payload.put("timestamp", timestamp);
+
             String body = mapper.writeValueAsString(payload);
             String sig = hmacSha256(webhookSecret, timestamp + "." + body);
 
-            String selfUrl = "http://localhost:" + serverPort + "/api/payments/webhook";
+            String selfUrl = resolveSelfWebhookUrl();
+            log.info("Self-webhook → {} (token={})", selfUrl, p.getToken());
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(selfUrl))
@@ -160,9 +204,19 @@ public class PaymentService {
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
 
-            httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(req,
+                    HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() >= 400) {
+                log.error("Self-webhook вернул {}: {}",
+                        response.statusCode(), response.body());
+                throw new RuntimeException("Webhook вернул "
+                        + response.statusCode() + ": " + response.body());
+            }
+        } catch (RuntimeException re) {
+            throw re;
         } catch (Exception e) {
-            throw new RuntimeException("Ошибка отправки self-webhook", e);
+            throw new RuntimeException("Ошибка отправки self-webhook: " + e.getMessage(), e);
         }
     }
 

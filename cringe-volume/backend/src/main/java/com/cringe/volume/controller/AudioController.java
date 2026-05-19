@@ -4,6 +4,7 @@ import com.cringe.volume.dto.*;
 import com.cringe.volume.service.AudioService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -58,38 +59,51 @@ public class AudioController {
         return ResponseEntity.ok(audioService.listTracks());
     }
 
+    /**
+     * Стрим аудио с поддержкой HTTP Range.
+     * Использует ResourceRegion — Spring сам сдвинется к нужному смещению
+     * и отдаст ровно запрошенный кусок (без чтения всего файла в память).
+     */
     @GetMapping("/tracks/{filename}/stream")
-    public ResponseEntity<Resource> streamTrack(
+    public ResponseEntity<ResourceRegion> streamTrack(
             @PathVariable String filename,
             @RequestHeader HttpHeaders headers) throws IOException {
 
         Resource resource = audioService.getTrackResource(filename);
         long fileSize = audioService.getTrackSize(filename);
-
-        String contentType = filename.toLowerCase().endsWith(".wav")
-                ? "audio/wav" : "audio/mpeg";
+        MediaType contentType = resolveContentType(filename);
 
         List<HttpRange> ranges = headers.getRange();
 
         if (ranges.isEmpty()) {
+            // Без Range — отдаём весь файл, но всё равно как ResourceRegion,
+            // чтобы Spring корректно прислал Accept-Ranges и поддержал seek.
+            ResourceRegion full = new ResourceRegion(resource, 0, fileSize);
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_TYPE, contentType)
+                    .contentType(contentType)
                     .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                     .contentLength(fileSize)
-                    .body(resource);
+                    .body(full);
         }
 
         HttpRange range = ranges.get(0);
         long start = range.getRangeStart(fileSize);
         long end = range.getRangeEnd(fileSize);
-        long rangeLength = end - start + 1;
+        // ограничиваем размер chunk-а, чтобы не отдавать гигантский кусок одним ответом
+        long rangeLength = Math.min(end - start + 1, 1024L * 1024L);
+
+        ResourceRegion region = new ResourceRegion(resource, start, rangeLength);
 
         return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .contentType(contentType)
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CONTENT_RANGE,
-                        "bytes " + start + "-" + end + "/" + fileSize)
-                .contentLength(rangeLength)
-                .body(resource);
+                .body(region);
+    }
+
+    private MediaType resolveContentType(String filename) {
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".wav")) return MediaType.parseMediaType("audio/wav");
+        if (lower.endsWith(".ogg")) return MediaType.parseMediaType("audio/ogg");
+        return MediaType.parseMediaType("audio/mpeg");
     }
 }

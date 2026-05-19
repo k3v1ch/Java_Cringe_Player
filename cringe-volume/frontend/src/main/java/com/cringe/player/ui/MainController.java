@@ -67,8 +67,10 @@ public class MainController {
                     }
                 });
             } catch (Exception e) {
+                e.printStackTrace();
+                String msg = describeError(e);
                 Platform.runLater(() ->
-                        statusLabel.setText("Ошибка загрузки треков"));
+                        statusLabel.setText("Ошибка загрузки треков: " + msg));
             }
         });
         t.setDaemon(true);
@@ -91,8 +93,10 @@ public class MainController {
             volumeField.setDisable(false);
             statusLabel.setText("Трек готов: " + selected);
         } catch (Exception e) {
-            showError("Ошибка", "Не удалось загрузить трек: " + e.getMessage());
-            statusLabel.setText("Ошибка загрузки трека");
+            e.printStackTrace();
+            String msg = describeError(e);
+            showError("Ошибка", "Не удалось загрузить трек: " + msg);
+            statusLabel.setText("Ошибка загрузки трека: " + msg);
         }
     }
 
@@ -129,10 +133,13 @@ public class MainController {
                     refreshTracks(); // обновить список
                 });
             } catch (Exception e) {
+                // печатаем полный stacktrace в stderr — иначе ошибка теряется
+                e.printStackTrace();
+                String msg = describeError(e);
                 Platform.runLater(() -> {
                     chooseFileButton.setDisable(false);
-                    showError("Ошибка загрузки", e.getMessage());
-                    statusLabel.setText("Ошибка загрузки");
+                    showError("Ошибка загрузки", msg);
+                    statusLabel.setText("Ошибка загрузки: " + msg);
                 });
             }
         });
@@ -140,44 +147,52 @@ public class MainController {
         uploadThread.start();
     }
 
+    /**
+     * Превращает любое исключение в читаемое сообщение.
+     * e.getMessage() часто null (IOException без message) — fallback на класс + cause.
+     */
+    private String describeError(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = e;
+        while (cur != null) {
+            String m = cur.getMessage();
+            if (m == null || m.isBlank()) m = cur.getClass().getSimpleName();
+            if (sb.length() > 0) sb.append(" → ");
+            sb.append(m);
+            cur = cur.getCause();
+            if (cur == e) break;  // защита от циклов
+        }
+        return sb.toString();
+    }
+
     /* ========== Воспроизведение ========== */
 
     @FXML
     private void onPlay() {
-        Thread t = new Thread(() -> {
-            try {
-                apiClient.play();
-                Platform.runLater(() -> {
-                    playerEngine.play();
-                    playButton.setDisable(true);
-                    stopButton.setDisable(false);
-                    statusLabel.setText("Воспроизведение...");
-                });
-            } catch (Exception e) {
-                Platform.runLater(() -> showError("Ошибка", e.getMessage()));
-            }
-        });
-        t.setDaemon(true);
-        t.start();
+        // воспроизведение — локальное на клиенте, серверный state-эндпоинт
+        // дёргать не обязательно (он используется только для синхронизации статуса).
+        try {
+            playerEngine.play();
+            playButton.setDisable(true);
+            stopButton.setDisable(false);
+            statusLabel.setText("Воспроизведение...");
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Ошибка", describeError(e));
+        }
     }
 
     @FXML
     private void onStop() {
-        Thread t = new Thread(() -> {
-            try {
-                apiClient.stop();
-                Platform.runLater(() -> {
-                    playerEngine.stop();
-                    playButton.setDisable(false);
-                    stopButton.setDisable(true);
-                    statusLabel.setText("Остановлено");
-                });
-            } catch (Exception e) {
-                Platform.runLater(() -> showError("Ошибка", e.getMessage()));
-            }
-        });
-        t.setDaemon(true);
-        t.start();
+        try {
+            playerEngine.stop();
+            playButton.setDisable(false);
+            stopButton.setDisable(true);
+            statusLabel.setText("Остановлено");
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Ошибка", describeError(e));
+        }
     }
 
     /* ========== Громкость (через платёж) ========== */
@@ -234,7 +249,8 @@ public class MainController {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle(title);
         alert.setHeaderText(null);
-        alert.setContentText(message);
+        alert.setContentText(message == null || message.isBlank()
+                ? "Неизвестная ошибка (см. консоль)" : message);
         alert.showAndWait();
     }
 }

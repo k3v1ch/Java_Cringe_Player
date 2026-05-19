@@ -19,6 +19,8 @@
     </properties>
 
     <dependencies>
+        <!-- JavaFX для текущей платформы (определяется автоматически).
+             Для cross-platform сборки можно задать <classifier>win</classifier> и т.д. -->
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
@@ -42,6 +44,7 @@
     </dependencies>
 
     <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -52,17 +55,18 @@
                     <target>17</target>
                 </configuration>
             </plugin>
+
+            <!-- javafx:run для локального запуска -->
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
                     <mainClass>com.cringe.player/com.cringe.player.CringePlayerApp</mainClass>
-                    <jlinkImageName>cringe-player</jlinkImageName>
-                    <launcher>CringeVolumePlayer</launcher>
                 </configuration>
             </plugin>
-            <!-- JAR с manifest для jpackage -->
+
+            <!-- Обычный JAR (нужен Launcher как main, иначе JavaFX не стартует на classpath) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -70,12 +74,13 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.cringe.player.CringePlayerApp</mainClass>
+                            <mainClass>com.cringe.player.Launcher</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
             </plugin>
-            <!-- Копирует все зависимости в target/libs -->
+
+            <!-- Копирует все зависимости в target/libs (для jpackage --input) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
@@ -88,6 +93,56 @@
                         <configuration>
                             <outputDirectory>${project.build.directory}/libs</outputDirectory>
                             <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Fat-jar для jpackage: все зависимости (gson + JavaFX classes)
+                 объединяются в один jar; нативные JavaFX-библиотеки придут
+                 через --module-path jmods. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <id>fat-jar</id>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>fat</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.cringe.player.Launcher</mainClass>
+                                </transformer>
+                                <!-- module-info.class из зависимостей убираем,
+                                     чтобы не было конфликтов в fat-jar -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <!-- ВАЖНО: JavaFX исключаем из fat-jar, т.к. jpackage
+                                 поставляет их через --module-path jmods. Иначе
+                                 split-package конфликт между classpath и module path. -->
+                            <artifactSet>
+                                <excludes>
+                                    <exclude>org.openjfx:*</exclude>
+                                </excludes>
+                            </artifactSet>
                         </configuration>
                     </execution>
                 </executions>
